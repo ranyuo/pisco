@@ -37,7 +37,7 @@ Para una instalación existente, el responsable puede revisar primero:
 php portal-private/import-official.php
 ```
 
-La aplicación es explícita mediante `--apply`. El comando reemplaza las colecciones públicas indicadas en el script y la identidad institucional; conserva cuentas, contraseñas, sesiones, expedientes, reclamos, mensajes y registros académicos. Crea antes una copia del estado en `portal-private/backups/`, con permisos 0600. Rechaza la operación si hay docentes académicos vinculados a personas anteriores que requieren conciliación. No se ejecuta automáticamente desde una página web. Revisar ediciones públicas existentes antes de aplicarlo, porque esas colecciones se sustituyen.
+La aplicación es explícita mediante `--apply`. El comando reemplaza las colecciones públicas indicadas en el script y la identidad institucional; conserva cuentas, contraseñas, sesiones, expedientes, reclamos, mensajes y registros académicos. Crea antes una copia del estado en `portal-private/backups/`, con permisos 0600. Conserva como borradores las fichas anteriores vinculadas a docentes académicos; rechaza la operación si falta la ficha de una vinculación. No se ejecuta automáticamente desde una página web. Revisar ediciones públicas existentes antes de aplicarlo, porque esas colecciones se sustituyen.
 
 En este entorno solo se aplicó sobre `pisco_test`. No se actuó sobre producción, no se ejecutó `git push` y no se publicó el entorno.
 
@@ -49,3 +49,20 @@ En este entorno solo se aplicó sobre `pisco_test`. No se actuó sobre producci�
 - Se probaron simulación y aplicación del importador en la base de pruebas.
 
 Las pruebas antiguas denominadas `demo-*` describen la identidad ficticia anterior y no validan esta adaptación. Las suites restantes no se ejecutaron en esta revisión.
+
+
+## Actualizar desde hPanel, sin SSH
+
+1. Guarda una copia de los archivos y exporta MySQL desde hPanel/phpMyAdmin.
+2. Descarga la versión más reciente de `ranyuo/pisco`. Sube el contenido de `public_html/` al directorio público del dominio y `portal-private/` a su carpeta hermana privada. Conserva `portal-private/config.php` y todos los respaldos. No crees carpetas anidadas `public_html/public_html`.
+3. Verifica que se hayan subido `public_html/actualizar-contenido.php`, `public_html/assets/oficial/`, `portal-private/OfficialContent.php`, `portal-private/data/portal.json` y `portal-private/data/official-files.json`.
+4. Abre `https://TU-DOMINIO/actualizar-contenido.php`. Usa la `install_key` existente de `portal-private/config.php` (no la contraseña de MySQL ni la del administrador). No compartas esta clave por chat ni la pongas en la URL.
+5. Lee el aviso de reemplazo, marca la casilla y pulsa «Respaldar y actualizar contenido oficial». La operación exige CSRF y clave privada, verifica la integridad de los archivos oficiales y guarda un respaldo privado antes de cambiar el estado de MySQL. Las solicitudes GET no aplican cambios.
+6. Cuando aparezca «Contenido oficial actualizado correctamente», elimina `actualizar-contenido.php` desde hPanel. El marcador guardado en MySQL bloquea otra ejecución web, incluso si se vuelve a subir el archivo.
+7. Revisa noticias, programas, PDF, acceso administrativo y trámites desde una ventana privada. No reinstales ni importes `schema.sql` sobre la base existente.
+
+`actualizar.php` actualiza el esquema; `actualizar-contenido.php` importa los contenidos. Son operaciones distintas. El actualizador de contenido requiere una instalación existente con el esquema de esta versión.
+
+Si la subida está incompleta, la clave no coincide, no se puede crear el respaldo o hay vínculos académicos incoherentes, no aplica los contenidos. La importación modifica solo el estado del portal en una transacción; conserva las tablas de cuentas y archivos. El respaldo adicional es del estado del portal, no sustituye la copia completa de MySQL desde hPanel.
+
+Validación adicional: `tests/browser-content-upgrade.cjs` comprueba rechazo de CSRF, clave incorrecta y falta de confirmación sin cambios; importación con respaldo 0600; conservación de cuentas, contraseñas y trámites; preservación de docentes vinculados como borradores y bloqueo posterior. La prueba restaura el estado previo al terminar.
