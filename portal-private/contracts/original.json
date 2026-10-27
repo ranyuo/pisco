@@ -385,7 +385,7 @@
         {
           "name": "lugar",
           "type": "text",
-          "required": true,
+          "required": false,
           "publishRequired": false,
           "unique": false
         },
@@ -521,7 +521,7 @@
           "name": "bases",
           "type": "file",
           "required": false,
-          "publishRequired": true,
+          "publishRequired": false,
           "unique": false
         },
         {
@@ -560,14 +560,14 @@
         {
           "name": "vigencia",
           "type": "text",
-          "required": true,
+          "required": false,
           "publishRequired": false,
           "unique": false
         },
         {
           "name": "version",
           "type": "text",
-          "required": true,
+          "required": false,
           "publishRequired": false,
           "unique": false
         },
@@ -770,14 +770,14 @@
         {
           "name": "apellidos",
           "type": "text",
-          "required": true,
+          "required": false,
           "publishRequired": false,
           "unique": false
         },
         {
           "name": "dni",
           "type": "text",
-          "required": true,
+          "required": false,
           "publishRequired": false,
           "unique": true,
           "max": 8
@@ -785,7 +785,7 @@
         {
           "name": "correo",
           "type": "email",
-          "required": true,
+          "required": false,
           "publishRequired": false,
           "unique": false
         },
@@ -806,14 +806,14 @@
         {
           "name": "especialidad",
           "type": "text",
-          "required": true,
+          "required": false,
           "publishRequired": false,
           "unique": false
         },
         {
           "name": "condicion",
           "type": "select",
-          "required": true,
+          "required": false,
           "publishRequired": false,
           "unique": false
         },
@@ -903,14 +903,14 @@
         {
           "name": "lat",
           "type": "number",
-          "required": true,
+          "required": false,
           "publishRequired": false,
           "unique": false
         },
         {
           "name": "lng",
           "type": "number",
-          "required": true,
+          "required": false,
           "publishRequired": false,
           "unique": false
         },
@@ -1467,7 +1467,7 @@
         {
           "name": "horario",
           "type": "text",
-          "required": true,
+          "required": false,
           "publishRequired": false,
           "unique": false
         },
@@ -1481,7 +1481,7 @@
         {
           "name": "costo",
           "type": "text",
-          "required": true,
+          "required": false,
           "publishRequired": false,
           "unique": false
         },
@@ -1792,7 +1792,7 @@
           "name": "inicioClases",
           "type": "date",
           "required": false,
-          "publishRequired": true,
+          "publishRequired": false,
           "unique": false
         },
         {

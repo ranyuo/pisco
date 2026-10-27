@@ -35,6 +35,15 @@ final class PortalDomain
                 if($spec['states']&&!in_array($r['estado']??'',array_merge($spec['states'],['En revisión']),true))throw new PortalError(422,'Estado no válido para '.$key.'.');
             }
         }
+        foreach(self::changedRows($old['locales']??[],$new['locales']??[],'locales') as $local){
+            $hasLat=isset($local['lat'])&&$local['lat']!=='';$hasLng=isset($local['lng'])&&$local['lng']!=='';
+            if($hasLat!==$hasLng)throw new PortalError(422,'Completa ambas coordenadas o deja ambas vacías.');
+            if($hasLat&&($local['lat'] < -18.5||$local['lat'] > 0||$local['lng'] < -82||$local['lng'] > -68))throw new PortalError(422,'Coordenadas fuera del territorio peruano.');
+        }
+        foreach(self::changedRows($old['personas']??[],$new['personas']??[],'personas') as $person){
+            if(!empty($person['dni'])&&!preg_match('/^[0-9]{8}$/D',(string)$person['dni']))throw new PortalError(422,'El DNI, cuando se informa, debe tener ocho dígitos.');
+            if(!empty($person['condicion'])&&!in_array($person['condicion'],['Nombrado','Contratado'],true))throw new PortalError(422,'Condición laboral no válida.');
+        }
         foreach($new['academico']['docentes'] as &$teacher){$person=PortalPolicy::find($new['personas'],'id',$teacher['per']??'');if($person){$teacher['nom']=trim($person['nombres'].' '.$person['apellidos']);$teacher['dni']=$person['dni']??'';$teacher['correo']=$person['correo']??'';$teacher['esp']=$person['especialidad']??'';$teacher['cond']=$person['condicion']??'';}}unset($teacher);
         foreach($new['programas'] as $program){$academicId=$new['academico']['progMap'][$program['id']]??null;if($academicId!==null)foreach($new['academico']['programas'] as &$academic)if($academic['id']===$academicId){$academic['nombre']=$program['nombre'];$academic['activo']=($program['estado']??'')==='Publicado';$academic['pid']=$program['id'];}unset($academic);}
         foreach(self::changedRows($old['becarios']??[],$new['becarios']??[],'becarios') as $r){

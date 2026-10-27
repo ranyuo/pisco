@@ -61,12 +61,25 @@ final class PortalApp
     public function db(): PDO
     {
         if ($this->connection === null) {
+            if (!in_array('mysql', PDO::getAvailableDrivers(), true)) throw new PortalError(503, 'Activa la extensión pdo_mysql en la configuración PHP de Hostinger.');
+            try {
             $this->connection = new PDO(
                 'mysql:host='.$this->config['db_host'].';port='.(int)($this->config['db_port'] ?? 3306).';dbname='.$this->config['db_name'].';charset=utf8mb4',
                 $this->config['db_user'], $this->config['db_password'],
                 [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_EMULATE_PREPARES => false,
                     PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]
             );
+            } catch (PDOException $error) {
+                $driverCode = (int)($error->errorInfo[1] ?? 0);
+                $message = match ($driverCode) {
+                    1044, 1045 => 'MySQL rechazó el acceso. Revisa el usuario y la contraseña en portal-private/config.php y asigna ese usuario a la base con permisos desde hPanel.',
+                    1049 => 'La base de datos configurada no existe. Copia desde hPanel su nombre completo, incluido el prefijo, en portal-private/config.php.',
+                    2002, 2003 => 'No se pudo conectar al servidor MySQL. Revisa db_host y db_port con los datos indicados por Hostinger.',
+                    default => null,
+                };
+                if ($message !== null) throw new PortalError(503, $message);
+                throw $error;
+            }
             try {
                 $roles=$this->connection->query("SELECT setting_value FROM pisco_settings WHERE setting_key='role_permissions'")->fetchColumn();
                 PortalPolicy::configureRoles($roles?json_decode($roles,true,flags:JSON_THROW_ON_ERROR):[]);

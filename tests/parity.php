@@ -14,7 +14,8 @@ const PASS='PruebaOriginal-2026!';
 $app->install(['install_key'=>$config['install_key'],'username'=>'admin','name'=>'Administrador','email'=>'admin@example.test','password'=>PASS,'password_confirmation'=>PASS]);
 $app->login(['username'=>'admin','password'=>PASS]);
 change(function(&$d){$a=&$d['academico'];
- // Las pruebas crean su propio padrón; la demo ya incluye alumnos y documentos.
+ // Las pruebas crean personas y padrón propios, independientes del contenido institucional.
+ $d['personas'][]=['id'=>'d4','nombres'=>'Docente','apellidos'=>'De prueba','dni'=>'70009999','correo'=>'docente@example.test','tipo'=>'Docente','condicion'=>'Contratado','especialidad'=>'Prueba','estado'=>'Publicado','programas'=>['apsti'],'empleabilidad'=>false,'uds'=>[],'orden'=>9999];
  foreach(['estudiantes','certs','notas','titulos'] as $collection)$a[$collection]=[];
  $d['certificados']=[];
  foreach([[1001,'70001001',1,'Regular'],[1002,'70001002',2,'Regular'],[1003,'70001003',1,'Egresado']] as [$id,$dni,$prog,$state])$a['estudiantes'][]=['id'=>$id,'dni'=>$dni,'nom'=>'Alumno de prueba '.$id,'prog'=>$prog,'periodo'=>$a['cfg']['periodo'],'ciclo'=>'VI','sec'=>'B','turno'=>'Tarde','estado'=>$state,'correo'=>'alumno'.$id.'@example.test','tel'=>'999111222'];

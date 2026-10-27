@@ -66,3 +66,8 @@ Las pruebas antiguas denominadas `demo-*` describen la identidad ficticia anteri
 Si la subida está incompleta, la clave no coincide, no se puede crear el respaldo o hay vínculos académicos incoherentes, no aplica los contenidos. La importación modifica solo el estado del portal en una transacción; conserva las tablas de cuentas y archivos. El respaldo adicional es del estado del portal, no sustituye la copia completa de MySQL desde hPanel.
 
 Validación adicional: `tests/browser-content-upgrade.cjs` comprueba rechazo de CSRF, clave incorrecta y falta de confirmación sin cambios; importación con respaldo 0600; conservación de cuentas, contraseñas y trámites; preservación de docentes vinculados como borradores y bloqueo posterior. La prueba restaura el estado previo al terminar.
+
+
+## Correcciones posteriores
+
+La revisión funcional y el procedimiento para aplicar correcciones selectivas sin reemplazar ediciones existentes están en [REVISION-HOSTINGER.md](REVISION-HOSTINGER.md). Para esta revisión usa `actualizar.php`; no ejecutes nuevamente la importación completa de contenido.

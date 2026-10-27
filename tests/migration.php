@@ -9,12 +9,18 @@ function actor(string $username='admin'):void{global $db;$s=$db->prepare('SELECT
 function saveData(array $data):array{global $app;return $app->save(['data'=>$data,'revision'=>$app->bootstrap()['revision']]);}
 function change(callable $f):array{global $app;$data=$app->bootstrap()['data'];$f($data);return saveData($data);}
 function proof(string $type):array{global $app;$c=$app->challenge(['purpose'=>$type]);return ['challenge_id'=>$c['id'],'answer'=>$_SESSION['challenges'][$c['id']]['answer'],'accept'=>true,'declare'=>true];}
-actor();$pdf="%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF";$file=PortalFiles::store($app,'prueba-migracion.pdf',$pdf);
+actor();
+change(function(&$d){
+ if(!$d['tiposBeca'])$d['tiposBeca'][]=['id'=>'qa-beca-tipo','nombre'=>'Beca sintética QA','descripcion'=>'Solo pruebas','estado'=>'Activo'];
+ if(!$d['becasPeriodos'])$d['becasPeriodos'][]=['id'=>'qa-beca-periodo','anio'=>2026,'periodo'=>'QA','estado'=>'Publicado','vigente'=>false];
+});
+$pdf="%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF";$file=PortalFiles::store($app,'prueba-migracion.pdf',$pdf);
 foreach(PortalPolicy::definitions()['specs'] as $key=>$spec){
  $col=$spec['collection'];if($col==='usuarios')continue;$d=$app->bootstrap()['data'];$r=$d[$col][0]??[];$r['id']='migration-'.$key;$r['deleted']=false;$r['estado']=$spec['states'][0]??'Borrador';$r['vigente']=false;
  foreach($spec['fields'] as $f){$name=$f['name'];if($f['unique'])$r[$name]=$f['type']==='number'?2090:('migracion-'.$key.'-'.$name);if($f['required']&&empty($r[$name]))$r[$name]=match($f['type']){'number'=>1,'email'=>'migracion@example.test','date'=>date('Y-m-d'),'datetime-local'=>date('Y-m-d\TH:i'),default=>'Prueba '.$key};}
  foreach(['titulo','nombre','nombres','slug'] as $field)if(isset($r[$field]))$r[$field]='Prueba migracion '.$key.' '.$field;
  if(isset($r['slug']))$r['slug']='migracion-'.$key;
+ if($col==='egresados')$r['programaId']='apsti';
  if($col==='programas')$r['codigo']='MIG99';
  if($col==='personas'){$r['titulo']='Ing.';$r['dni']='79999991';$r['especialidad']='Informática';$r['condicion']='Contratado';$r['correo']='persona-migracion@example.test';}
  if($col==='jerarquica')$r['esDirector']=false;

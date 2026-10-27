@@ -2,7 +2,7 @@
 declare(strict_types=1);
 final class PortalSchema
 {
-    public const VERSION = 4;
+    public const VERSION = 5;
     public static function apply(PDO $db): void
     {
         foreach (explode(';', file_get_contents(__DIR__.'/schema.sql')) as $sql) if (trim($sql) !== '') $db->exec($sql);
@@ -29,6 +29,19 @@ final class PortalSchema
             if($row){$data=json_decode($row['data'],true,flags:JSON_THROW_ON_ERROR);$changed=false;$used=[];
                 foreach($data['reclamos']??[] as $claim)if(!empty($claim['cargoCod']))$used[strtoupper($claim['cargoCod'])]=true;
                 if(isset($data['reclamos']))foreach($data['reclamos'] as &$claim)if(empty($claim['cargoCod'])){do{$code=strtoupper(bin2hex(random_bytes(8)));}while(isset($used[$code]));$claim['cargoCod']=$code;$used[$code]=true;$changed=true;}unset($claim);
+                if(($data['config']['correccionesContenido']??null)!=='2026-10-27'){
+                // Corrige únicamente valores de la importación anterior que siguen intactos.
+                if(isset($data['licenciamiento'])&&$data['licenciamiento']===[]){$data['licenciamiento']=['estado'=>'Sin información verificada','etapa'=>'','descripcion'=>'Consulte al instituto para confirmar el estado de licenciamiento.','hitos'=>[],'documentos'=>[]];$changed=true;}
+                $patches=json_decode(file_get_contents(__DIR__.'/data/content-corrections.json'),true,512,JSON_THROW_ON_ERROR);
+                foreach($patches as $patch)foreach($data['programas']??[] as $index=>$program){
+                    if(($program['id']??null)===$patch['id']&&($program[$patch['campo']]??null)===$patch['antes']){$data['programas'][$index][$patch['campo']]=$patch['despues'];$changed=true;}
+                }
+                foreach($data['programas']??[] as $program){
+                    if(empty($program['coordinadorId']))continue;
+                    foreach($data['personas']??[] as $index=>$person)if(($person['id']??null)===$program['coordinadorId']&&!in_array($program['id'],$person['programas']??[],true)){$data['personas'][$index]['programas'][]=$program['id'];$changed=true;}
+                }
+                    $data['config']['correccionesContenido']='2026-10-27';$changed=true;
+                }
                 if($changed)$db->prepare('UPDATE pisco_state SET data=?,revision=revision+1 WHERE id=1')->execute([json_encode($data,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE)]);
             }
             if($ownTransaction)$db->commit();

@@ -3,6 +3,10 @@ declare(strict_types=1);
 ob_start();require dirname(__DIR__).'/portal-private/bootstrap.php';$p=getenv('PORTAL_CONFIG_FILE');if(!$p||!str_ends_with($p,'config.test.php'))throw new RuntimeException('Solo configuración de pruebas.');$cfg=require$p;if(!str_ends_with($cfg['db_name'],'_test'))throw new RuntimeException('Solo base de pruebas.');$app=portal_app();$db=$app->db();$d=json_decode($db->query('SELECT data FROM pisco_state WHERE id=1')->fetchColumn(),true);$count=0;
 function ok(bool$v,string$l):void{global$count;if(!$v)throw new RuntimeException($l);$count++;echo"OK $l\n";}
 function denied(int$status,callable$f,string$l):void{try{$f();}catch(PortalError$e){ok($e->status===$status,$l.' ('.$e->status.')');return;}throw new RuntimeException('No se rechazó: '.$l);}
+// Fixtures de regresión locales: no dependen de que producción publique borradores o trámites de ejemplo.
+$d['documentos'][]=[...$d['documentos'][0],'id'=>'qa-regression-draft','estado'=>'Borrador'];
+if(!$d['reclamos'])$d['reclamos'][]=['id'=>'qa-regression-claim','numDoc'=>'12345678'];
+if(!$d['expedientes'])$d['expedientes'][]=['id'=>'qa-regression-case','asunto'=>'Asunto de prueba'];
 $public=(new ReflectionMethod(PortalApp::class,'publicData'))->invoke($app,$d);$role=['rol'=>'transparencia','usuario'=>'transparencia'];$view=PortalPolicy::project($d,$role,$public);$row=current(array_filter($view['documentos'],fn($r)=>$r['estado']==='Borrador'));if(!$row)throw new RuntimeException('Falta un documento borrador de prueba.');
 $n=$view;foreach($n['documentos']as&$r)if($r['id']===$row['id'])$r['estado']='Histórico';unset($r);denied(403,fn()=>PortalPolicy::apply($d,$view,$n,$role),'No se elude la aprobación usando Histórico');
 $published=current(array_filter($view['documentos'],fn($r)=>$r['estado']==='Publicado'));$n=$view;foreach($n['documentos']as&$r)if($r['id']===$published['id'])$r['nombre'].=' cambio sin aprobación';unset($r);denied(403,fn()=>PortalPolicy::apply($d,$view,$n,$role),'Cambios de documento publicado requieren nueva aprobación');
