@@ -4483,11 +4483,13 @@ function docBlob(doc) {
   return makePdf(doc.titulo || doc.nombre, doc.lineas || [], (DB.config.inst.nombre || '').toUpperCase(),true);
 }
 function openDoc(doc) {
+  if (officialDocUrl(doc)) { window.open(doc.url, '_blank', 'noopener,noreferrer'); return; }
   const b = docBlob(doc); if (!b) return toast('Documento no disponible', 'err');
   const url = URL.createObjectURL(b); const w = window.open(url, '_blank', 'noopener'); if (!w) downloadBlob(b, doc.nombre);
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
-function downloadDoc(doc) { const b = docBlob(doc); if (b) downloadBlob(b, doc.nombre); }
+function officialDocUrl(doc) { return doc && typeof doc.url === 'string' && /^\/?assets\/oficial\/[a-f0-9]{16}\.pdf$/.test(doc.url); }
+function downloadDoc(doc) { if (officialDocUrl(doc)) { const a = document.createElement('a'); a.href = doc.url; a.download = doc.nombre || 'documento.pdf'; a.click(); return; } const b = docBlob(doc); if (b) downloadBlob(b, doc.nombre); }
 function downloadBlob(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500); }
 function downloadText(text, name, type = 'text/plain') { downloadBlob(new Blob([text], { type }), name); }
 const fsize = b => !b ? '' : b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB';
@@ -4940,11 +4942,13 @@ function teacherModal(id, progId) {
 R('nosotros/campus-e-informes', (path, q) => {
   const pg0 = page('campus'); if (!pg0 || !isPub(pg0)) return notFound(path);
   const i = inst(); const locs = sortO(P('locales').filter(isPub)); const L = locs[0] || { lat: i.lat, lng: i.lng, nombre: 'Sede principal', direccion: i.direccion };
-  const d = 0.006, bbox = `${L.lng - d},${L.lat - d},${L.lng + d},${L.lat + d}`;
+  const hasCoords = L.lat !== '' && L.lng !== '' && Number.isFinite(Number(L.lat)) && Number.isFinite(Number(L.lng));
+  const d = 0.006, bbox = `${Number(L.lng) - d},${Number(L.lat) - d},${Number(L.lng) + d},${Number(L.lat) + d}`;
+  const mapQuery = encodeURIComponent(hasCoords ? `${L.lat},${L.lng}` : `${i.nombreCorto}, ${i.direccion}`);
   const body = `<h1>${esc(pg0.titulo)}</h1><p class="lead">${esc(stripTags(pg0.contenido))}</p>
    <div class="info-cards"><div>${ic('map')}<span><b>Dirección</b><address style="font-style:normal">${esc(i.direccion)}</address></span></div><div>${ic('phone')}<span><b>Teléfono</b><a href="tel:${esc(i.telefono.replace(/\D/g, ''))}">${esc(i.telefono)}</a> (${esc(i.telefonoNota)})</span></div><div>${ic('mail')}<span><b>Correo institucional</b><a href="mailto:${esc(i.correo)}">${esc(i.correo)}</a></span></div></div>
-   <section><h2 style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">Nuestra ubicación <span style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn sm sec" href="https://www.google.com/maps/search/?api=1&query=${L.lat},${L.lng}" target="_blank" rel="noopener noreferrer">Abrir en Google Maps ${ic('ext').replace('<svg', '<svg style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2"')}</a><a class="btn sm" href="https://www.google.com/maps/dir/?api=1&destination=${L.lat},${L.lng}" target="_blank" rel="noopener noreferrer">Cómo llegar</a></span></h2>
-   <iframe class="map" title="Mapa de ubicación de ${esc(i.nombreCorto)}" loading="lazy" src="https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${L.lat},${L.lng}"></iframe></section>
+   <section><h2 style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">Nuestra ubicación <span style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn sm sec" href="https://www.google.com/maps/search/?api=1&query=${mapQuery}" target="_blank" rel="noopener noreferrer">Abrir en Google Maps ${ic('ext').replace('<svg', '<svg style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2"')}</a><a class="btn sm" href="https://www.google.com/maps/dir/?api=1&destination=${mapQuery}" target="_blank" rel="noopener noreferrer">Cómo llegar</a></span></h2>
+   <iframe class="map" title="Mapa de ubicación de ${esc(i.nombreCorto)}" loading="lazy" src="${hasCoords ? `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${L.lat},${L.lng}` : `https://maps.google.com/maps?q=${mapQuery}&output=embed`}"></iframe></section>
    ${locs.length > 1 ? `<h2>Locales</h2><div class="grid g2">${locs.map(l => `<article class="card"><img src="${img(l.foto)}" alt="" style="aspect-ratio:16/9;object-fit:cover;border-radius:10px 10px 0 0"><div class="cb"><h3>${esc(l.nombre)}</h3><p>${esc(l.direccion)}<br>${esc(l.telefono)} · ${esc(l.correo)}<br>${esc(l.horario)}</p></div></article>`).join('')}</div>` : ''}
    <section style="margin-top:22px"><h2>${ic('mail').replace('<svg', '<svg style="width:22px;height:22px;stroke:var(--link);fill:none;stroke-width:2;vertical-align:-4px"')} Contáctanos</h2><p>Completa el formulario y te responderemos a la brevedad.</p>${contactForm(q.get('programa'))}</section>`;
   const html = shell(path, { title: 'Campus e Informes', desc: stripTags(pg0.contenido), crumbs: [['Nosotros', '#/nosotros/presentacion'], ['Campus e Informes']], banner: { title: 'Nosotros', text: 'Conoce nuestra identidad, historia y el compromiso con la formación técnica.' }, side: nosotrosSide('campus-e-informes') + `<figure class="side-box" style="margin:0 0 18px"><img src="${img(pg0.imagen || L.foto)}" alt="Campus institucional" style="aspect-ratio:4/3;object-fit:cover"><figcaption class="pad"><strong>Un campus para grandes oportunidades</strong></figcaption></figure><section class="side-box"><h2>Horarios de atención</h2><div class="pad"><p style="margin:0 0 6px"><b>${esc(i.horario)}</b></p><p style="margin:0">${esc(i.horarioSab || '')}</p></div></section>`, body });
@@ -5003,7 +5007,7 @@ R('programas/:slug', (path, q, prm) => {
   const body = `
    <section class="block">${hblock('target', 'Perfil de egreso')}<div class="prose">${sanitize(p.perfil)}</div></section>
    <section class="block">${hblock('briefcase', 'Campo laboral')}<ul class="fields-list">${(p.campoItems || []).filter(Boolean).map(c => `<li>${esc(c)}</li>`).join('')}</ul></section>
-   <section class="block">${hblock('layers', 'Malla curricular')}<p>Plan de estudios organizado en ${p.modulos.length} módulos profesionales · ${totalC} créditos.</p>${p.modulos.map((m, i) => `<details class="mod" ${i === 0 ? 'open' : ''}><summary>${esc(m.codigo)} · ${esc(m.nombre)}</summary><div class="tbl-wrap" style="border:0;border-radius:0"><table class="tbl light"><thead><tr><th>Semestre</th><th>Unidad didáctica</th><th class="num">Créditos</th><th class="num">Horas</th></tr></thead><tbody>${m.uds.map(u => `<tr><td>${esc(u.semestre)}</td><td>${esc(u.nombre)}</td><td class="num">${esc(u.creditos)}</td><td class="num">${esc(u.horas)}</td></tr>`).join('')}<tr><td colspan="4"><b>Experiencias formativas en situaciones reales de trabajo:</b> ${esc(m.efsrt || '—')}</td></tr></tbody></table></div></details>`).join('')}</section>
+   <section class="block">${hblock('layers', 'Malla curricular')}<p>Plan de estudios organizado en ${p.modulos.length} módulos profesionales ${p.modulos.every(m => m.uds.every(u => u.creditos !== '' && u.creditos != null)) ? `· ${totalC} créditos.` : '· Créditos y horas: consultar la malla oficial.'}</p>${p.modulos.map((m, i) => `<details class="mod" ${i === 0 ? 'open' : ''}><summary>${esc(m.codigo)} · ${esc(m.nombre)}</summary><div class="tbl-wrap" style="border:0;border-radius:0"><table class="tbl light"><thead><tr><th>Semestre</th><th>Unidad didáctica</th><th class="num">Créditos</th><th class="num">Horas</th></tr></thead><tbody>${m.uds.map(u => `<tr><td>${esc(u.semestre)}</td><td>${esc(u.nombre)}</td><td class="num">${esc(u.creditos)}</td><td class="num">${esc(u.horas)}</td></tr>`).join('')}<tr><td colspan="4"><b>Experiencias formativas en situaciones reales de trabajo:</b> ${esc(m.efsrt || '—')}</td></tr></tbody></table></div></details>`).join('')}</section>
    <section class="block grid g2">${dl(p.brochure, 'Brochure del programa', 'Conoce más sobre el programa, perfil, competencias y oportunidades.')}${dl(p.malla, 'Malla curricular vigente', 'Revisa la estructura curricular, semestres y unidades didácticas.', '#1e7e34', 'PDF')}</section>
    ${coord ? `<section class="block">${hblock('user', 'Coordinación del programa')}<div class="card" style="display:flex;gap:16px;padding:16px;align-items:center;flex-wrap:wrap"><img src="${img(coord.foto)}" alt="Fotografía de ${esc(fullName(coord))}" style="width:96px;height:96px;border-radius:50%;object-fit:cover"><div style="flex:1;min-width:220px"><strong style="color:var(--hc)">${esc(fullName(coord))}</strong><br><small style="color:var(--muted)">Coordinador(a) del programa · <a href="mailto:${esc(coord.correo)}">${esc(coord.correo)}</a></small>${p.coordinadorMsg ? `<p style="margin:6px 0 0;font-style:italic">“${esc(p.coordinadorMsg)}”</p>` : ''}</div></div></section>` : ''}
    <section class="block">${hblock('users', 'Plana docente del programa')}${ds.length ? `<div class="grid g4">${ds.map(d => `<article class="card tcard"><img src="${img(d.foto)}" alt="Fotografía de ${esc(fullName(d))}" loading="lazy"><div class="cb"><strong>${esc(fullName(d))}</strong><small>${esc(d.especialidad)}</small><button class="btn xs sec" data-prof="${d.id}">Ver perfil</button></div></article>`).join('')}</div>` : emptyMsg('docentes')}</section>
@@ -5022,7 +5026,7 @@ R('programas/:slug', (path, q, prm) => {
 /* ---------- ADMISIÓN ---------- */
 R('admision', (path, q) => {
   const all = P('admisiones').filter(a => a.estado !== 'Borrador' || a._preview).sort((a, b) => b.anio - a.anio);
-  const a = all.find(x => String(x.anio) === q.get('anio')) || admVigente();
+  const a = all.find(x => String(x.anio) === q.get('anio')) || admVigente() || all[0];
   if (!a) return shell(path, { title: 'Admisión', crumbs: [['Admisión y Matrículas', '#/admision'], ['Admisión']], banner: { title: 'Admisión' }, side: null, body: `<h1>Admisión</h1>${emptyMsg('procesos de admisión')}` });
   const tupaAdm = P('tupa').filter(t => isPub(t) && t.categoria === 'Admisión' && t.anio == (DB.tupaDocs.anio || 2026));
   const uit = DB.config.uit[DB.tupaDocs.anio] || 0;
@@ -5044,12 +5048,12 @@ R('admision', (path, q) => {
 });
 /* ---------- MATRÍCULA ---------- */
 R('matricula', path => {
-  const m = matVigente();
+  const m = matVigente() || P('matriculas').filter(m => m.estado !== 'Borrador').sort((a, b) => String(b.periodo).localeCompare(String(a.periodo)))[0];
   if (!m) return shell(path, { title: 'Matrícula', crumbs: [['Admisión y Matrículas', '#/admision'], ['Matrícula']], banner: { title: 'Matrícula' }, side: null, body: `<h1>Matrícula</h1>${emptyMsg('periodos de matrícula')}` });
   const items = s => sortO((m.items || []).filter(x => x.seccion === s && x.estado === 'Publicado' && !x.deleted));
   const col = (icon, t, s, extra = '') => `<section class="card"><div class="cb"><h2 style="font-size:17px;margin-top:0;display:flex;gap:8px;align-items:center">${ic(icon).replace('<svg', '<svg style="width:22px;height:22px;stroke:var(--link);fill:none;stroke-width:2"')} ${t}</h2>${items(s).length ? `<ol style="padding-left:20px;margin:0">${items(s).map(x => `<li style="margin-bottom:6px">${esc(x.texto)}</li>`).join('')}</ol>` : '<p>Sin requisitos registrados.</p>'}${extra}</div></section>`;
   const tupaM = P('tupa').filter(t => isPub(t) && t.categoria === 'Matrícula');
-  const body = `<h1 style="text-align:center">${esc(m.titulo)}</h1><p style="text-align:center"><span class="badge" style="font-size:14px;padding:6px 14px">${ic('calendar').replace('<svg', '<svg style="width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2;vertical-align:-3px"')} Inicio de clases: <time datetime="${esc(m.inicioClases)}">${fdate(m.inicioClases + 'T12:00:00')}</time></span></p>
+  const body = `<h1 style="text-align:center">${esc(m.titulo)}</h1><p style="text-align:center"><span class="badge" style="font-size:14px;padding:6px 14px">${ic('calendar').replace('<svg', '<svg style="width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2;vertical-align:-3px"')} Inicio de clases: <time datetime="${esc(m.inicioClases)}">${m.inicioClases ? fdate(m.inicioClases + 'T12:00:00') : 'Por confirmar con el instituto'}</time></span></p>
    <div class="prose">${sanitize(m.descripcion)}</div>
    <div class="grid g3">${col('money', 'Costos de matrícula', 'costos', `${tupaM.length ? `<table class="tbl light subtbl" style="margin-top:10px"><tbody>${tupaM.map(t => `<tr><td>${esc(t.denominacion)}</td><td class="num">${money(t.monto)}</td></tr>`).join('')}</tbody></table>` : ''}${m.docTasas ? `<button class="btn sm sec" style="margin-top:10px;width:100%" data-tasas>Ver tasas y costos vigentes →</button>` : ''}`)}${col('user', 'Matrícula de ingresantes', 'ingresantes')}${col('restore', 'Ratificación de matrícula', 'ratificacion')}</div>
    ${(m.cronograma || []).length ? `<h2>Cronograma del periodo ${esc(m.periodo)}</h2><div class="tbl-wrap"><table class="tbl light"><thead><tr><th>Actividad</th><th>Fecha</th></tr></thead><tbody>${m.cronograma.map(c => `<tr><td>${esc(c.actividad)}</td><td>${esc(c.fecha)}</td></tr>`).join('')}</tbody></table></div>` : ''}
@@ -5064,7 +5068,7 @@ R('becas', (path, q) => {
   const vig = becaVigente() || pers[0];
   const years = [...new Set(pers.map(b => b.anio))];
   const tipos = P('tiposBeca');
-  const body = `<h1>Consulta de Beneficiarios de Becas</h1><p class="lead">Busca información de beneficiarios por año, periodo, programa de estudio o tipo de beca. Por defecto se muestra el periodo vigente.</p>
+  const body = `<h1>Consulta de Beneficiarios de Becas</h1>${!pers.length ? `<div class="notice">El sitio oficial publica información histórica de becas de 2022, 2023 y 2024. <a href="https://www.iestppisco.edu.pe/vista/becas" target="_blank" rel="noopener noreferrer">Consultar la publicación del instituto</a>. No se ha confirmado una convocatoria vigente.</div>` : ''}<p class="lead">Busca información de beneficiarios por año, periodo, programa de estudio o tipo de beca. Por defecto se muestra el periodo vigente.</p>
    <form class="filters" data-bf role="search" aria-label="Filtros de becas">
      <div class="field"><label for="bf-a">Año académico</label><select id="bf-a" name="anio">${years.map(y => `<option ${vig && y === vig.anio ? 'selected' : ''}>${y}</option>`).join('')}</select></div>
      <div class="field"><label for="bf-p">Periodo</label><select id="bf-p" name="periodo"><option value="">Todos</option>${[...new Set(pers.map(b => b.periodo))].map(p => `<option ${vig && p === vig.periodo ? 'selected' : ''}>${p}</option>`).join('')}</select></div>
@@ -5234,7 +5238,9 @@ R('transparencia/tupa', (path, q) => {
   };
 });
 R('transparencia/estadisticas', (path, q) => {
-  const st = P('estadisticas'); const years = [...new Set(st.map(s => s.anio))].sort(); const last5 = years.slice(-5);
+  const st = P('estadisticas');
+  if (!st.length) return shell(path, { title: 'Estadísticas', crumbs: [['Transparencia', '#/transparencia/documentos-gestion'], ['Estadísticas']], side: transpSide('estadisticas'), body: '<h1>Estadísticas institucionales</h1><p>No se han incorporado cifras verificadas. La página de origen muestra tablas sin datos consolidados.</p><p><a href="https://www.iestppisco.edu.pe/vista/estadisticas" target="_blank" rel="noopener noreferrer">Consultar la publicación institucional</a></p>' });
+  const years = [...new Set(st.map(s => s.anio))].sort(); const last5 = years.slice(-5);
   const sel = +(q.get('anio') || last5[last5.length - 1]);
   const tot = (y, k) => st.filter(s => s.anio === y).reduce((a, s) => a + (+s[k] || 0), 0);
   const chart = (k, t) => `<figure class="card cb chart-card" style="margin:0"><h3>${t}</h3><figcaption style="font-size:12.5px;color:var(--muted);margin-bottom:6px">Total institucional por año (${last5[0]}–${last5[last5.length - 1]})</figcaption>${barChart(last5.map(y => ({ k: String(y), v: tot(y, k) })), { label: t + ' por año' })}</figure>`;
@@ -6933,6 +6939,7 @@ async function sha256File(file) { try { if (!(window.crypto && crypto.subtle)) r
 async function storeFile(file, prefix) { return portalUpload(file); }
 async function fileBlob(meta) {
   if (!meta) return null;
+  if (officialDocUrl(meta)) { const response = await fetch(meta.url); if (!response.ok) throw new Error('No se pudo cargar el documento institucional.'); return response.blob(); }
   if (meta.fileId) { const response=await fetch(meta.url); if(!response.ok)throw new Error('No tienes acceso a ese archivo.');return response.blob(); }
   if (meta.data) return dataURItoBlob(meta.data);
   if (meta.lineas || meta.titulo) return docBlob(meta);
