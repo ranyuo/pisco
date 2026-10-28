@@ -2220,6 +2220,8 @@ const slotEnds = t => SLOTS[t].filter(s => s[0] !== "REC").map(s => s[1]);
 function seed(){ throw new Error('Los datos académicos se inicializan en PHP y MySQL.'); }
 let DB = HOST.loadAcad();
 if(!DB || DB.v !== 3){ DB = seed(); DB.progMap = {apsti:1, cont:2, pa:3, enf:4}; }
+// PHP representa los mapas vacíos como []; convertir antes de usar claves de texto.
+DB.publicados = Object.assign({}, DB.publicados || {});
 rebuildSlots();
 function save(){ return HOST.saveAcad(DB) }
 
@@ -4092,6 +4094,7 @@ ACTIONS.toPublic = ACTIONS.toPublicApp = () => { location.hash = "#/" };
 ACTIONS.logout = () => HOST.logout();
 function syncDocentes(){ const ps = HOST.docentes(); DB.docentes.forEach(d => { const p = ps.find(x => x.id === d.per); if(p){ d.nom = p.nom; d.dni = p.dni; d.correo = p.correo; d.esp = p.esp; d.cond = p.cond } }) }
 function sync(){
+  DB.publicados = Object.assign({}, DB.publicados || {});
   DB.perms = DB.perms || {}; Object.entries({admin:2, dir:1, acad:2, adm:1}).forEach(([r,v]) => { DB.perms[r] = DB.perms[r] || {}; if(DB.perms[r].alumnos == null) DB.perms[r].alumnos = v });
   const i = HOST.inst(); Object.assign(DB.cfg, {nombre:i.nombre, siglas:i.siglas, director:i.director, direccion:i.direccion, web:i.web});
   DB.progMap = DB.progMap || {};
@@ -4198,6 +4201,22 @@ const money = n => 'S/ ' + Number(n || 0).toLocaleString('es-PE', { minimumFract
 const num = n => Number(n || 0).toLocaleString('es-PE');
 const slugify = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 90);
 const normTitle = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+// La vigencia puede ser un año, un intervalo o una observación sin fecha.
+function documentYears(value) {
+  const match = String(value || '').trim().match(/^(\d{4})(?:\s*(?:-|–|—|\/|al?|hasta)\s*(\d{4}))?$/i);
+  if (!match) return [];
+  const from = +match[1], to = +(match[2] || match[1]);
+  if (from < 1900 || to > 2100 || to < from) return [];
+  return Array.from({ length: to - from + 1 }, (_, i) => String(from + i));
+}
+function documentYearOptions(docs) {
+  const years = [...new Set(docs.flatMap(d => documentYears(d.vigencia)))].sort().reverse();
+  return years.map(y => [y, y]).concat(docs.some(d => !documentYears(d.vigencia).length) ? [['sin-anio', 'Sin año especificado']] : []);
+}
+const matchesDocumentYear = (doc, year) => !year || (year === 'sin-anio' ? !documentYears(doc.vigencia).length : documentYears(doc.vigencia).includes(year));
+const inheritedDocument = file => /(?:^|\/)assets\/chincha\//i.test(file?.url || '') || /^https?:\/\/(?:www\.)?iestpchincha\.edu\.pe(?:\/|$)/i.test(file?.fuente || '');
+const referenceDocument = doc => inheritedDocument(docFile(doc)) || /^Referencia pendiente de validar/i.test(doc.nombre || '');
+
 const maskDni = d => d ? '****' + String(d).slice(-4) : '';
 const stripTags = h => { const d = document.createElement('div'); d.innerHTML = h || ''; return d.textContent || ''; };
 const clamp = (s, n) => { s = String(s || ''); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
@@ -5156,11 +5175,11 @@ const DST = { page: 1, size: 5 };
 R('transparencia', p => ROUTES['transparencia/documentos-gestion'](p, new URLSearchParams()));
 R('transparencia/documentos-gestion', path => {
   const docs = P('documentos').filter(d => ['Publicado', 'Histórico'].includes(d.estado) || d._preview);
-  const years = [...new Set(docs.map(d => String(d.vigencia).slice(0, 4)).filter(y => /^\d{4}$/.test(y)))].sort().reverse();
-  const body = `<h1>Documentos de Gestión</h1><p class="lead">Normas, planes y documentos que orientan nuestra institución. Se muestran por defecto los documentos vigentes; puede consultar versiones anteriores con el filtro de estado.</p>
+  const years = documentYearOptions(docs);
+  const body = `<h1>Documentos de Gestión</h1><p class="lead">Normas, planes y documentos que orientan nuestra institución. Se muestran los documentos publicados. Los archivos heredados se identifican como referencias pendientes de validación; puede consultar versiones anteriores con el filtro de estado.</p>
    <form class="filters" data-df role="search"><div class="field"><label for="df-t">Tipo de documento</label><select id="df-t" name="tipo"><option value="">Todos</option>${coll('tiposDocumento').map(t => `<option value="${t.id}">${esc(t.nombre)}</option>`).join('')}</select></div>
-   <div class="field"><label for="df-y">Año de vigencia</label><select id="df-y" name="anio"><option value="">Todos</option>${years.map(y => `<option>${y}</option>`).join('')}</select></div>
-   <div class="field"><label for="df-e">Estado</label><select id="df-e" name="estado"><option value="Publicado">Vigentes</option><option value="Histórico">Históricos</option><option value="">Todos</option></select></div>
+   <div class="field"><label for="df-y">Año de vigencia</label><select id="df-y" name="anio"><option value="">Todos</option>${years.map(([value, label]) => `<option value="${esc(value)}">${esc(label)}</option>`).join('')}</select></div>
+   <div class="field"><label for="df-e">Estado</label><select id="df-e" name="estado"><option value="Publicado">Publicados</option><option value="Histórico">Históricos</option><option value="">Todos</option></select></div>
    <div class="field"><label for="df-s">Buscar documento</label><input id="df-s" name="s" placeholder="Nombre del documento"></div>
    <div class="actions"><button class="btn">Buscar</button><button type="button" class="btn ghost" data-clear>Limpiar filtros</button></div></form><div id="dres"></div>`;
   const html = shell(path, { title: 'Documentos de Gestión', desc: 'PEI, PAT, RI, MPP, MPA y demás documentos de gestión vigentes e históricos.', crumbs: [['Transparencia', '#/transparencia/documentos-gestion'], ['Documentos de Gestión']], banner: { kicker: 'Transparencia institucional', title: 'Documentos de Gestión', text: 'Normas, planes y documentos que orientan nuestra institución' }, side: transpSide('documentos-gestion') + sideContact(), body });
@@ -5169,9 +5188,9 @@ R('transparencia/documentos-gestion', path => {
       const f = $('[data-df]'); DST.page = 1;
       const run = () => {
         const v = Object.fromEntries(new FormData(f)); const s = normTitle(v.s);
-        const rows = sortO(docs.filter(d => (!v.tipo || d.tipoId === v.tipo) && (!v.anio || String(d.vigencia).startsWith(v.anio)) && (!v.estado || d.estado === v.estado || (d._preview && v.estado === 'Publicado')) && (!s || normTitle(d.nombre).includes(s))));
+        const rows = sortO(docs.filter(d => (!v.tipo || d.tipoId === v.tipo) && matchesDocumentYear(d, v.anio) && (!v.estado || d.estado === v.estado || (d._preview && v.estado === 'Publicado')) && (!s || normTitle(d.nombre).includes(s))));
         const pg = rows.slice((DST.page - 1) * DST.size, DST.page * DST.size);
-        $('#dres').innerHTML = rows.length ? `<p role="status">Total: <b>${rows.length}</b> documento(s)</p><div class="tbl-wrap"><table class="tbl"><thead><tr><th class="c">N.º</th><th>Documento</th><th>Tipo</th><th>Vigencia</th><th>Versión</th><th>Estado</th><th class="c">Acciones</th></tr></thead><tbody>${pg.map((d, i) => { const fl = docFile(d); return `<tr><td class="c">${(DST.page - 1) * DST.size + i + 1}</td><td><span class="file-chip" style="background:none;border:0;padding:0"><span class="ft">PDF</span> ${esc(d.nombre)}</span>${d.refModulo ? `<br><small style="color:var(--muted)">Documento administrado desde el módulo Admisión</small>` : ''}</td><td>${esc(tipoDoc(d.tipoId))}</td><td>${esc(d.vigencia)}</td><td>${esc(d.version)}</td><td>${d.estado === 'Histórico' ? '<span class="badge gray">Histórico</span>' : '<span class="badge ok">Vigente</span>'}</td><td class="c" style="white-space:nowrap">${fl ? `<button class="btn xs sec" data-v="${d.id}">Ver documento</button> <button class="btn xs" data-d="${d.id}">Descargar</button>` : '<span style="color:var(--muted)">No disponible</span>'}</td></tr>`; }).join('')}</tbody></table></div>${pager(rows.length, DST.page, DST.size, [5, 10, 25])}` : `<div class="empty" role="status">No se encontraron documentos con los criterios seleccionados.</div>`;
+        $('#dres').innerHTML = rows.length ? `<p role="status">Total: <b>${rows.length}</b> documento(s)</p><div class="tbl-wrap"><table class="tbl"><thead><tr><th class="c">N.º</th><th>Documento</th><th>Tipo</th><th>Vigencia</th><th>Versión</th><th>Estado</th><th class="c">Acciones</th></tr></thead><tbody>${pg.map((d, i) => { const fl = docFile(d); return `<tr><td class="c">${(DST.page - 1) * DST.size + i + 1}</td><td><span class="file-chip" style="background:none;border:0;padding:0"><span class="ft">PDF</span> ${esc(d.nombre)}</span>${d.refModulo ? `<br><small style="color:var(--muted)">Documento administrado desde el módulo Admisión</small>` : ''}</td><td>${esc(tipoDoc(d.tipoId))}</td><td>${esc(d.vigencia)}</td><td>${esc(d.version)}</td><td>${referenceDocument(d) ? '<span class="badge warn">Referencia pendiente</span>' : d.estado === 'Histórico' ? '<span class="badge gray">Histórico</span>' : '<span class="badge ok">Publicado</span>'}</td><td class="c" style="white-space:nowrap">${fl ? `<button class="btn xs sec" data-v="${d.id}">Ver documento</button> <button class="btn xs" data-d="${d.id}">Descargar</button>` : '<span style="color:var(--muted)">No disponible</span>'}</td></tr>`; }).join('')}</tbody></table></div>${pager(rows.length, DST.page, DST.size, [5, 10, 25])}` : `<div class="empty" role="status">No se encontraron documentos con los criterios seleccionados.</div>`;
         bindPager($('#dres'), DST, run);
         $$('[data-v]').forEach(b => b.onclick = () => openDoc(docFile(docs.find(d => d.id === b.dataset.v))));
         $$('[data-d]').forEach(b => b.onclick = () => downloadDoc(docFile(docs.find(d => d.id === b.dataset.d))));
@@ -5269,15 +5288,17 @@ R('transparencia/licenciamiento', path => {
 R('transparencia/tupa', (path, q) => {
   const y = DB.tupaDocs.anio; const uit = DB.config.uit[y] || 0; const rows = P('tupa').filter(t => isPub(t) && t.anio == y);
   const cats = [...new Set(rows.map(r => r.categoria))];
-  const body = `<h1>Texto Único de Procedimientos Administrativos (TUPA) ${esc(y)}</h1><p class="lead">${DB.config.tupaReferencial ? 'Tarifario conservado como referencia, pendiente de validación institucional para Pisco. No realizar pagos con esta información.' : 'Relación de derechos, tasas y montos vigentes.'} Base de cálculo: UIT ${esc(y)} = <b>${money(uit)}</b>.</p>
-   <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">${DB.tupaDocs.resolucion ? '<button class="btn sec" data-td="resolucion">Resolución de aprobación (PDF)</button>' : ''}${DB.tupaDocs.tupa ? '<button class="btn" data-td="tupa">TUPA vigente (PDF)</button>' : ''}</div>
+  const reference = DB.config.tupaReferencial || inheritedDocument(DB.tupaDocs.tupa) || inheritedDocument(DB.tupaDocs.resolucion);
+  const fileLabel = key => { const fromChincha = inheritedDocument(DB.tupaDocs[key]); return key === 'tupa' ? (reference ? `TUPA de referencia${fromChincha ? ' — Chincha' : ''} (PDF)` : 'TUPA vigente (PDF)') : (reference ? `Resolución de referencia${fromChincha ? ' — Chincha' : ''} (PDF)` : 'Resolución de aprobación (PDF)'); };
+  const body = `<h1>${reference ? 'Tarifario de referencia' : 'Texto Único de Procedimientos Administrativos (TUPA)'} ${esc(y)}</h1><p class="lead">${reference ? 'Tarifario conservado como referencia, pendiente de validación institucional para Pisco. No realizar pagos con esta información.' : 'Relación de derechos, tasas y montos vigentes.'} Base de cálculo: UIT ${esc(y)} = <b>${money(uit)}</b>.</p>
+   <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">${DB.tupaDocs.resolucion ? `<button class="btn sec" data-td="resolucion">${esc(fileLabel('resolucion'))}</button>` : ''}${DB.tupaDocs.tupa ? `<button class="btn" data-td="tupa">${esc(fileLabel('tupa'))}</button>` : ''}</div>
    <form class="filters" data-tf role="search"><div class="field"><label for="tf-s">Buscar concepto</label><input id="tf-s" name="s" placeholder="Ej.: certificado, matrícula, titulación"></div><div class="field"><label for="tf-c">Categoría</label><select id="tf-c" name="c"><option value="">Todas</option>${cats.map(c => `<option>${esc(c)}</option>`).join('')}</select></div><div class="actions"><button type="button" class="btn ghost" data-clear>Limpiar filtros</button></div></form><div id="tres"></div>`;
-  const html = shell(path, { title: 'TUPA ' + y, desc: 'Texto Único de Procedimientos Administrativos vigente.', crumbs: [['Transparencia', '#/transparencia/documentos-gestion'], ['TUPA']], banner: { kicker: 'Transparencia institucional', title: 'TUPA', text: 'Derechos, tasas y procedimientos' }, side: transpSide('tupa'), body });
+  const html = shell(path, { title: 'TUPA ' + y, desc: reference ? 'Tarifario de referencia pendiente de validación institucional para Pisco.' : 'Texto Único de Procedimientos Administrativos vigente.', crumbs: [['Transparencia', '#/transparencia/documentos-gestion'], ['TUPA']], banner: { kicker: 'Transparencia institucional', title: 'TUPA', text: 'Derechos, tasas y procedimientos' }, side: transpSide('tupa'), body });
   return {
     html, after: () => {
       const f = $('[data-tf]');
       const run = () => { const s = normTitle(f.s.value), c = f.c.value; const rs = rows.filter(r => (!c || r.categoria === c) && (!s || normTitle(r.denominacion + ' ' + r.codigo).includes(s)));
-        $('#tres').innerHTML = rs.length ? `<p role="status">${rs.length} concepto(s)</p><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Código</th><th>Categoría</th><th>Denominación</th><th class="num">Monto</th><th class="num">% UIT</th><th>Lugar de pago</th></tr></thead><tbody>${rs.map(r => `<tr><td>${esc(r.codigo)}</td><td>${esc(r.categoria)}</td><td>${esc(r.denominacion)}</td><td class="num"><b>${money(r.monto)}</b></td><td class="num">${uit ? (r.monto / uit * 100).toFixed(2) + ' %' : '—'}</td><td><small>${esc(DB.config.tupaReferencial ? 'Confirmar con Administración de Pisco' : r.cuenta)}</small></td></tr>`).join('')}</tbody></table></div>` : `<div class="empty" role="status">No hay conceptos que coincidan con la búsqueda.</div>`; };
+        $('#tres').innerHTML = rs.length ? `<p role="status">${rs.length} concepto(s)</p><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Código</th><th>Categoría</th><th>Denominación</th><th class="num">Monto</th><th class="num">% UIT</th><th>Lugar de pago</th></tr></thead><tbody>${rs.map(r => `<tr><td>${esc(r.codigo)}</td><td>${esc(r.categoria)}</td><td>${esc(r.denominacion)}</td><td class="num"><b>${money(r.monto)}</b></td><td class="num">${uit ? (r.monto / uit * 100).toFixed(2) + ' %' : '—'}</td><td><small>${esc(reference ? 'Confirmar con Administración de Pisco' : r.cuenta)}</small></td></tr>`).join('')}</tbody></table></div>` : `<div class="empty" role="status">No hay conceptos que coincidan con la búsqueda.</div>`; };
       f.oninput = run; f.onsubmit = e => e.preventDefault(); $('[data-clear]').onclick = () => { f.reset(); run(); }; run();
       $$('[data-td]').forEach(b => b.onclick = () => openDoc(DB.tupaDocs[b.dataset.td]));
     }
@@ -5913,7 +5934,7 @@ SPECS.documentos = {
   key: 'documentos', mod: 'documentos', coll: 'documentos', title: 'Documentos de gestión', singular: 'documento', icon: 'file', states: ['Borrador', 'Publicado', 'Histórico'], label: r => `${r.nombre} v${r.version}`,
   sub: 'Administra los documentos institucionales, sus versiones y su publicación.',
   tabs: () => tabsBar([['list', 'Listado de documentos', '#/admin/documentos'], ['cat', 'Categorías', '#/admin/tiposdoc']], 'list'),
-  search: ['nombre', 'descripcion'], filters: [{ n: 'tipoId', l: 'Tipo de documento', opts: () => coll('tiposDocumento').map(t => [t.id, t.nombre]) }, { n: 'estado', l: 'Estado', opts: ['Borrador', 'En revisión', 'Publicado', 'Histórico'] }, { n: 'anio', l: 'Año de vigencia', opts: () => [...new Set(coll('documentos').map(d => String(d.vigencia).slice(0, 4)))].sort().reverse(), test: (r, v) => String(r.vigencia).startsWith(v) }],
+  search: ['nombre', 'descripcion'], filters: [{ n: 'tipoId', l: 'Tipo de documento', opts: () => coll('tiposDocumento').map(t => [t.id, t.nombre]) }, { n: 'estado', l: 'Estado', opts: ['Borrador', 'En revisión', 'Publicado', 'Histórico'] }, { n: 'anio', l: 'Año de vigencia', opts: () => documentYearOptions(coll('documentos')), test: matchesDocumentYear }],
   preview: () => '#/transparencia/documentos-gestion',
   cols: [{ l: 'Documento', f: r => `<span class="file-chip" style="background:none;border:0;padding:0"><span class="ft">PDF</span><b>${esc(r.nombre)}</b></span>${r.refModulo ? '<br><small class="badge violet">Referencia: módulo Admisión</small>' : ''}` }, { l: 'Tipo', f: r => esc(tipoDoc(r.tipoId)) }, { l: 'Vigencia', f: r => esc(r.vigencia) }, { l: 'Versión', cls: 'c', f: r => esc(r.version) }, { l: 'Estado', f: r => stBadge(r.estado) }, { l: 'Publicación', f: r => fshort(r.fechaPub) }],
   rowActs: r => ib('ver', 'eye', 'Ver archivo') + ib('ver2', 'history', 'Historial de versiones') + ib('nv', 'copy', 'Nueva versión'),
@@ -5954,7 +5975,7 @@ SPECS.tupa = {
   cols: [{ l: 'Año', f: r => r.anio }, { l: 'Código', f: r => esc(r.codigo) }, { l: 'Categoría', f: r => esc(r.categoria) }, { l: 'Denominación', f: r => esc(r.denominacion) }, { l: 'Monto', cls: 'num', f: r => money(r.monto) }, { l: '% UIT', cls: 'num', f: r => DB.config.uit[r.anio] ? (r.monto / DB.config.uit[r.anio] * 100).toFixed(2) + ' %' : '—' }, { l: 'Estado', f: r => stBadge(r.estado) }],
   exportCSV: { head: ['Año', 'Código', 'Categoría', 'Denominación', 'Monto', 'Cuenta'], row: r => [r.anio, r.codigo, r.categoria, r.denominacion, r.monto, r.cuenta] },
   defaults: () => ({ anio: DB.tupaDocs.anio, cuenta: 'Banco de la Nación – Cta. Cte. (ver en ventanilla)' }),
-  fields: [{ n: 'anio', l: 'Año', t: 'number', req: true }, { n: 'codigo', l: 'Código', req: true }, { n: 'categoria', l: 'Categoría', t: 'select', req: true, opts: ['Admisión', 'Matrícula', 'Certificación', 'Titulación', 'Trámites', 'Pensiones y otros pagos'] }, { n: 'monto', l: 'Monto (S/)', t: 'number', step: '0.01', min: 0, req: true }, { n: 'denominacion', l: 'Denominación del procedimiento', req: true, full: true }, { n: 'cuenta', l: 'Cuenta / lugar de pago', full: true }, { n: 'requisitos', l: 'Requisitos', t: 'textarea', full: true }],
+  fields: [{ n: 'anio', l: 'Año', t: 'number', req: true }, { n: 'codigo', l: 'Código', req: true }, { n: 'categoria', l: 'Categoría', t: 'select', req: true, opts: rec => [...new Set([...coll('tupa').map(t => t.categoria), rec.categoria, 'Admisión', 'Matrícula', 'Certificación', 'Titulación', 'Trámites', 'Pensiones y otros pagos'].filter(Boolean))] }, { n: 'monto', l: 'Monto (S/)', t: 'number', step: '0.01', min: 0, req: true }, { n: 'denominacion', l: 'Denominación del procedimiento', req: true, full: true }, { n: 'cuenta', l: 'Cuenta / lugar de pago', full: true }, { n: 'requisitos', l: 'Requisitos', t: 'textarea', full: true }],
   validate: w => { const d = alive('tupa').find(t => t.id !== w.id && t.anio == w.anio && normTitle(t.codigo) === normTitle(w.codigo)); return d ? { codigo: 'El código ya existe para el año ' + w.anio + '.' } : {}; },
 };
 /* ---------- Nosotros ---------- */

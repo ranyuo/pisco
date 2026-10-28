@@ -187,6 +187,7 @@ final class PortalApp
 
     private function normalizeDates(array $data): array
     {
+        $data = PortalContent::normalize($data);
         foreach(['noticias','eventos'] as $key)foreach($data[$key]??[] as $i=>$r)if(!empty($r['fecha'])){try{$data[$key][$i]['fecha']=(new DateTimeImmutable($r['fecha'],new DateTimeZone($this->config['timezone']??'America/Lima')))->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d\TH:i:s.v\Z');}catch(Exception){}}
         return $data;
     }

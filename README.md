@@ -37,3 +37,19 @@ Las tarifas y los archivos heredados se conservan como referencias pendientes de
 - `tests/browser-prototype.cjs`: páginas públicas, cinco carreras, directorio, intranet, edición, PDF y actualización web.
 
 Las pruebas que modifican datos se ejecutan solo con `config.test.php` y bases `_test`. No se modificó Hostinger. `MAPEO-CHINCHA.md` documenta la procedencia histórica del sistema y los archivos complementarios, no la fuente primaria actual de Pisco.
+
+## Regresión de las correcciones funcionales
+
+En una base local exclusiva `_test`, ejecutar en este orden:
+
+```sh
+PORTAL_CONFIG_FILE=/ruta/portal-private/config.test.php php tests/parity.php
+PORTAL_CONFIG_FILE=/ruta/portal-private/config.test.php php tests/functional-fixes.php
+PORTAL_CONFIG_FILE=/ruta/portal-private/config.test.php php -S 127.0.0.1:8086 -t public_html
+# En otra terminal, con Playwright y Chromium disponibles:
+PISCO_BASE_URL=http://127.0.0.1:8086 node tests/browser-functional-fixes.cjs
+```
+
+Se comprueban publicación persistente de horarios y consulta del alumno, edición de categorías TUPA, filtros de vigencia por años/rangos, normalización de datos existentes y presentación de documentos referenciales. Estas pruebas modifican únicamente la base local de pruebas.
+
+En una instalación existente, `actualizar.php` corrige las categorías y la errata heredada del TUPA sin reimportar contenido: mantener desmarcada la importación del prototipo. La lectura y el siguiente guardado también normalizan esos conceptos. Se conservan identificadores, montos y denominaciones personalizadas. Los archivos heredados continúan disponibles como referencias identificadas; deben sustituirse por los documentos oficiales aprobados de Pisco cuando la institución los proporcione.
