@@ -1,3 +1,5 @@
+> **Adaptación Chincha:** revisa primero [README.md](README.md) y [MAPEO-CHINCHA.md](MAPEO-CHINCHA.md). Para una base de prueba existente, la casilla de importación de `actualizar.php` carga el contenido público; subir archivos o actualizar el esquema por sí solo no lo reemplaza. Las menciones a la demo y sus pruebas históricas describen la versión anterior.
+
 La versión unificada está en main. Para esta actualización lee también CORRECCION-RECLAMOS.md y ejecuta actualizar.php para completar códigos de reclamos anteriores.
 
 # INSTITUTO PUBLICO DE ICA para Hostinger: PHP y MySQL, sin Laravel

@@ -4,11 +4,10 @@ ob_start();require dirname(__DIR__).'/portal-private/bootstrap.php';$path=getenv
 function ok(bool $v,string $label):void{global$count;if(!$v)throw new RuntimeException($label);$count++;echo "OK $label\n";}
 function update(callable $f):void{global$app;$b=$app->bootstrap();$d=$b['data'];$f($d);$app->save(['data'=>$d,'revision'=>$b['revision']]);}
 function ruc(string $n):string{$w=[5,4,3,2,7,6,5,4,3,2];$s=0;foreach($w as$i=>$v)$s+=(int)$n[$i]*$v;$d=11-$s%11;return$n.($d===10?0:($d===11?1:$d));}
-update(function(&$d){$d['personas'][]=['id'=>'qa-crud-person','tipo'=>'Docente','nombres'=>'Docente','apellidos'=>'QA CRUD','estado'=>'Publicado','programas'=>['apsti'],'dni'=>'79999981','condicion'=>'Contratado'];});
 $fixtures=[
  'programas'=>['id'=>780001,'cod'=>'AC-TEST','nombre'=>'Programa académico de prueba','dur'=>'3 años','sem'=>6,'activo'=>true],
  'uds'=>['id'=>780001,'cod'=>'UD-AC-TEST','nombre'=>'Unidad de prueba CRUD','prog'=>780001,'ciclo'=>'VI','horas'=>2,'cred'=>2],
- 'docentes'=>['id'=>780001,'per'=>'qa-crud-person','nom'=>'Docente de prueba CRUD','dni'=>'79999981','correo'=>'docente-crud@example.test','uds'=>[780001],'dias'=>['Lun'],'desde'=>'07:00','hasta'=>'20:00'],
+ 'docentes'=>['id'=>780001,'per'=>'d5','nom'=>'Docente de prueba CRUD','dni'=>'79999981','correo'=>'docente-crud@example.test','uds'=>[780001],'dias'=>['Lun'],'desde'=>'07:00','hasta'=>'20:00'],
  'ambientes'=>['id'=>780001,'cod'=>'AULA-AC-TEST','tipo'=>'Aula','cap'=>30,'ubic'=>'Pabellón de prueba','caract'=>'Prueba','prog'=>780001],
  'modulos'=>['id'=>780001,'prog'=>780001,'cod'=>'MOD-AC-TEST','nombre'=>'Módulo de prueba CRUD','ciclos'=>'VI'],
  'estudiantes'=>['id'=>780001,'dni'=>'79999981','nom'=>'Alumno de prueba CRUD','prog'=>780001,'periodo'=>'2026-II','ciclo'=>'VI','sec'=>'A','turno'=>'Mañana','estado'=>'Regular','correo'=>'alumno-crud@example.test','tel'=>'999111222'],

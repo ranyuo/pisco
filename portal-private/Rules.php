@@ -129,7 +129,7 @@ final class PortalRules
             $year=$new['tupaDocs']['anio']??null;if(!is_scalar($year)||!isset($new['config']['uit'][$year]))throw new PortalError(422,'Registra la UIT del año del TUPA vigente.');
         }
         if(!PortalPolicy::equal($old['licenciamiento']??null,$new['licenciamiento']??null)){
-            $license=$new['licenciamiento']??[];if(!in_array($license['estado']??null,['Sin información verificada','No iniciado','En proceso','Licenciado','Denegado'],true))throw new PortalError(422,'Estado de licenciamiento no válido.');
+            $license=$new['licenciamiento']??[];if(!in_array($license['estado']??null,['No iniciado','En proceso','Licenciado','Denegado'],true))throw new PortalError(422,'Estado de licenciamiento no válido.');
             if($license['estado']==='Licenciado'&&(!is_string($license['resolucion']??null)||trim($license['resolucion'])===''))throw new PortalError(422,'El licenciamiento requiere su resolución institucional.');
             foreach(['fechaResolucion','vigenciaHasta'] as $key)if(!empty($license[$key])&&!self::date($license[$key]))throw new PortalError(422,'La fecha de licenciamiento no es válida.');
         }

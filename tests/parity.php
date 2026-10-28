@@ -14,13 +14,13 @@ const PASS='PruebaOriginal-2026!';
 $app->install(['install_key'=>$config['install_key'],'username'=>'admin','name'=>'Administrador','email'=>'admin@example.test','password'=>PASS,'password_confirmation'=>PASS]);
 $app->login(['username'=>'admin','password'=>PASS]);
 change(function(&$d){$a=&$d['academico'];
- // Las pruebas crean personas y padrón propios, independientes del contenido institucional.
- $d['personas'][]=['id'=>'d4','nombres'=>'Docente','apellidos'=>'De prueba','dni'=>'70009999','correo'=>'docente@example.test','tipo'=>'Docente','condicion'=>'Contratado','especialidad'=>'Prueba','estado'=>'Publicado','programas'=>['apsti'],'empleabilidad'=>false,'uds'=>[],'orden'=>9999];
+ // Las pruebas crean sus propias personas y alumnos, sin depender del contenido institucional.
+ $d['personas'][]=['id'=>'qa-docente','nombres'=>'Docente','apellidos'=>'de prueba','dni'=>'70009999','correo'=>'docente@example.test','tipo'=>'Docente','condicion'=>'Contratado','especialidad'=>'Prueba','programas'=>['apsti'],'estado'=>'Publicado'];
  foreach(['estudiantes','certs','notas','titulos'] as $collection)$a[$collection]=[];
  $d['certificados']=[];
  foreach([[1001,'70001001',1,'Regular'],[1002,'70001002',2,'Regular'],[1003,'70001003',1,'Egresado']] as [$id,$dni,$prog,$state])$a['estudiantes'][]=['id'=>$id,'dni'=>$dni,'nom'=>'Alumno de prueba '.$id,'prog'=>$prog,'periodo'=>$a['cfg']['periodo'],'ciclo'=>'VI','sec'=>'B','turno'=>'Tarde','estado'=>$state,'correo'=>'alumno'.$id.'@example.test','tel'=>'999111222'];
  $a['uds'][]=['id'=>9001,'cod'=>'UD-TEST','nombre'=>'Unidad de prueba','prog'=>1,'ciclo'=>'VI','horas'=>1,'cred'=>1];
- $a['docentes'][]=['id'=>9001,'per'=>'d4','nom'=>'Docente de prueba','dni'=>'70009999','tel'=>'999111222','correo'=>'docente@example.test','cond'=>'Contratado','esp'=>'Prueba','uds'=>[9001],'dias'=>['Lun','Mar','Mié','Jue','Vie'],'desde'=>'07:00','hasta'=>'22:00'];
+ $a['docentes'][]=['id'=>9001,'per'=>'qa-docente','nom'=>'Docente de prueba','dni'=>'70009999','tel'=>'999111222','correo'=>'docente@example.test','cond'=>'Contratado','esp'=>'Prueba','uds'=>[9001],'dias'=>['Lun','Mar','Mié','Jue','Vie'],'desde'=>'07:00','hasta'=>'22:00'];
  $a['ambientes'][]=['id'=>9001,'cod'=>'AULA-TEST','nombre'=>'Aula de prueba','ubic'=>'Pabellón de prueba','tipo'=>'Aula','cap'=>30,'prog'=>1];
  $a['sesiones'][]=['id'=>9001,'per'=>$a['cfg']['periodo'],'prog'=>1,'ciclo'=>'VI','sec'=>'B','turno'=>'Tarde','ud'=>9001,'doc'=>9001,'amb'=>9001,'dia'=>'Vie','ini'=>'16:00','fin'=>'17:00'];
  $a['modulos'][]=['id'=>9001,'prog'=>1,'cod'=>'MOD-TEST','nombre'=>'Módulo de prueba','ciclos'=>'VI'];
@@ -28,7 +28,7 @@ change(function(&$d){$a=&$d['academico'];
 ok(true,'Maestro académico completo guardado en MySQL');
 $student=$app->accountOperation(['action'=>'student','student_id'=>1001]);ok($student['user']['rol']==='estudiante'&&strlen($student['temporary_password'])>=12,'Crear acceso desde el maestro de alumnos');
 $app->accountOperation(['action'=>'update','id'=>$student['user']['server_id'],'account'=>['username'=>'70001001','name'=>'Alumno 1001','email'=>'alumno1001@example.test','password'=>PASS,'role'=>'estudiante','vin'=>'est:1001']]);
-foreach(['imagen','secretaria','coordinador','transparencia','atencion','directivo','docente','egresado'] as $role){$profile=match($role){'coordinador'=>['programaId'=>'apsti'],'docente'=>['vin'=>'doc:9001','personaId'=>'d4'],'egresado'=>['vin'=>'est:1003'],default=>[]};$app->createAccount(['username'=>$role,'name'=>'Rol '.$role,'email'=>$role.'@example.test','password'=>PASS,'role'=>$role,...$profile]);}
+foreach(['imagen','secretaria','coordinador','transparencia','atencion','directivo','docente','egresado'] as $role){$profile=match($role){'coordinador'=>['programaId'=>'apsti'],'docente'=>['vin'=>'doc:9001','personaId'=>'qa-docente'],'egresado'=>['vin'=>'est:1003'],default=>[]};$app->createAccount(['username'=>$role,'name'=>'Rol '.$role,'email'=>$role.'@example.test','password'=>PASS,'role'=>$role,...$profile]);}
 $app->createAccount(['username'=>'70001002','name'=>'Otro alumno','email'=>'alumno1002@example.test','password'=>PASS,'role'=>'estudiante','vin'=>'est:1002']);
 $app->logout();$companyInput=['declaration'=>true,'ruc'=>ruc('2012345678'),'nom'=>'Empresa de prueba','sector'=>'Servicios','ubic'=>'Pisco','dir'=>'Calle de prueba 123','contacto'=>'Contacto de prueba','cargoC'=>'Responsable','correo'=>'empresa@example.test','tel'=>'999111222','web'=>'','password'=>PASS,'role'=>'admin'];
 $registered=$app->registerCompany($companyInput);$companyId=$registered['company']['id'];$companyUsername=$registered['username'];

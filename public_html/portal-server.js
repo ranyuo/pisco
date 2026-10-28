@@ -133,11 +133,13 @@ async function portalUpload(file){
 }
 
 const portalOldDocBlob=docBlob;
-docBlob=function(doc){if(doc?.fileId){const xhr=new XMLHttpRequest();xhr.open('GET',doc.url,false);xhr.overrideMimeType('text/plain; charset=x-user-defined');xhr.send();if(xhr.status!==200)throw new Error('No tienes acceso al archivo.');return new Blob([Uint8Array.from(xhr.responseText,c=>c.charCodeAt(0)&255)],{type:doc.type});}return portalOldDocBlob(doc);};
+// Publicaciones institucionales conservadas localmente; no confundirlas con PDF de ejemplo.
+function portalPublishedDoc(doc){return typeof doc?.url==='string'&&/^\/assets\/chincha\/[A-Za-z0-9_-]+\.(pdf|png|jpg|webp)$/.test(doc.url);}
+docBlob=function(doc){if(doc?.fileId||portalPublishedDoc(doc)){const xhr=new XMLHttpRequest();xhr.open('GET',doc.url,false);xhr.overrideMimeType('text/plain; charset=x-user-defined');xhr.send();if(xhr.status!==200)throw new Error('No se pudo cargar el archivo.');return new Blob([Uint8Array.from(xhr.responseText,c=>c.charCodeAt(0)&255)],{type:doc.type});}return portalOldDocBlob(doc);};
 const portalOldOpenDoc=openDoc;
-openDoc=function(doc){if(doc?.fileId){window.open(doc.url,'_blank','noopener');return;}portalOldOpenDoc(doc);};
+openDoc=function(doc){if(doc?.fileId||portalPublishedDoc(doc)){window.open(doc.url,'_blank','noopener');return;}portalOldOpenDoc(doc);};
 const portalOldDownloadDoc=downloadDoc;
-downloadDoc=function(doc){if(doc?.fileId){const a=document.createElement('a');a.href=doc.url+'&download=1';a.download=doc.original||doc.nombre;a.click();return;}portalOldDownloadDoc(doc);};
+downloadDoc=function(doc){if(doc?.fileId||portalPublishedDoc(doc)){const a=document.createElement('a');a.href=doc.fileId?doc.url+'&download=1':doc.url;a.download=doc.original||doc.nombre;a.click();return;}portalOldDownloadDoc(doc);};
 // Los campos de archivo del módulo académico antes conservaban solo nombre y tamaño.
 document.addEventListener('change',async event=>{
   const input=event.target;if(!input.matches('.ix input[type=file]')||input.dataset.act||input.dataset.id)return;

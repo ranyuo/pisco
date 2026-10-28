@@ -385,7 +385,7 @@
         {
           "name": "lugar",
           "type": "text",
-          "required": false,
+          "required": true,
           "publishRequired": false,
           "unique": false
         },
@@ -521,7 +521,7 @@
           "name": "bases",
           "type": "file",
           "required": false,
-          "publishRequired": false,
+          "publishRequired": true,
           "unique": false
         },
         {
@@ -560,14 +560,14 @@
         {
           "name": "vigencia",
           "type": "text",
-          "required": false,
+          "required": true,
           "publishRequired": false,
           "unique": false
         },
         {
           "name": "version",
           "type": "text",
-          "required": false,
+          "required": true,
           "publishRequired": false,
           "unique": false
         },
@@ -770,7 +770,7 @@
         {
           "name": "apellidos",
           "type": "text",
-          "required": false,
+          "required": true,
           "publishRequired": false,
           "unique": false
         },
@@ -806,7 +806,7 @@
         {
           "name": "especialidad",
           "type": "text",
-          "required": false,
+          "required": true,
           "publishRequired": false,
           "unique": false
         },
@@ -903,14 +903,14 @@
         {
           "name": "lat",
           "type": "number",
-          "required": false,
+          "required": true,
           "publishRequired": false,
           "unique": false
         },
         {
           "name": "lng",
           "type": "number",
-          "required": false,
+          "required": true,
           "publishRequired": false,
           "unique": false
         },
@@ -1273,7 +1273,7 @@
         {
           "name": "dni",
           "type": "text",
-          "required": true,
+          "required": false,
           "publishRequired": false,
           "unique": false,
           "max": 8
@@ -1467,7 +1467,7 @@
         {
           "name": "horario",
           "type": "text",
-          "required": false,
+          "required": true,
           "publishRequired": false,
           "unique": false
         },
@@ -1481,7 +1481,7 @@
         {
           "name": "costo",
           "type": "text",
-          "required": false,
+          "required": true,
           "publishRequired": false,
           "unique": false
         },
@@ -1792,7 +1792,7 @@
           "name": "inicioClases",
           "type": "date",
           "required": false,
-          "publishRequired": false,
+          "publishRequired": true,
           "unique": false
         },
         {

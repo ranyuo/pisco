@@ -35,23 +35,17 @@ final class PortalDomain
                 if($spec['states']&&!in_array($r['estado']??'',array_merge($spec['states'],['En revisión']),true))throw new PortalError(422,'Estado no válido para '.$key.'.');
             }
         }
-        foreach(self::changedRows($old['locales']??[],$new['locales']??[],'locales') as $local){
-            $hasLat=isset($local['lat'])&&$local['lat']!=='';$hasLng=isset($local['lng'])&&$local['lng']!=='';
-            if($hasLat!==$hasLng)throw new PortalError(422,'Completa ambas coordenadas o deja ambas vacías.');
-            if($hasLat&&($local['lat'] < -18.5||$local['lat'] > 0||$local['lng'] < -82||$local['lng'] > -68))throw new PortalError(422,'Coordenadas fuera del territorio peruano.');
-        }
-        foreach(self::changedRows($old['personas']??[],$new['personas']??[],'personas') as $person){
-            if(!empty($person['dni'])&&!preg_match('/^[0-9]{8}$/D',(string)$person['dni']))throw new PortalError(422,'El DNI, cuando se informa, debe tener ocho dígitos.');
-            if(!empty($person['condicion'])&&!in_array($person['condicion'],['Nombrado','Contratado'],true))throw new PortalError(422,'Condición laboral no válida.');
-        }
         foreach($new['academico']['docentes'] as &$teacher){$person=PortalPolicy::find($new['personas'],'id',$teacher['per']??'');if($person){$teacher['nom']=trim($person['nombres'].' '.$person['apellidos']);$teacher['dni']=$person['dni']??'';$teacher['correo']=$person['correo']??'';$teacher['esp']=$person['especialidad']??'';$teacher['cond']=$person['condicion']??'';}}unset($teacher);
         foreach($new['programas'] as $program){$academicId=$new['academico']['progMap'][$program['id']]??null;if($academicId!==null)foreach($new['academico']['programas'] as &$academic)if($academic['id']===$academicId){$academic['nombre']=$program['nombre'];$academic['activo']=($program['estado']??'')==='Publicado';$academic['pid']=$program['id'];}unset($academic);}
         foreach(self::changedRows($old['becarios']??[],$new['becarios']??[],'becarios') as $r){
             if($r['deleted']??false)continue;
-            if(!preg_match('/^[0-9]{8}$/',(string)($r['dni']??'')))throw new PortalError(422,'El DNI del beneficiario debe tener ocho dígitos.');
+            if(!empty($r['dni'])&&!preg_match('/^[0-9]{8}$/',(string)$r['dni']))throw new PortalError(422,'El DNI del beneficiario debe tener ocho dígitos.');
             $period=self::foreign($new['becasPeriodos'],$r['periodoId']??null,'Periodo de becas');self::foreign($new['programas'],$r['programaId']??null,'Programa');self::foreign($new['tiposBeca'],$r['tipoId']??null,'Tipo de beca');
             if(($period['estado']??'')==='Cerrado'&&PortalPolicy::role($user)!=='admin')throw new PortalError(403,'El periodo de becas está cerrado.');
-            foreach($new['becarios'] as $other)if(!($other['deleted']??false)&&$other['id']!==$r['id']&&($other['dni']??'')===$r['dni']&&$other['periodoId']===$r['periodoId']&&$other['programaId']===$r['programaId']&&$other['tipoId']===$r['tipoId'])throw new PortalError(422,'Beneficiario duplicado en ese periodo, programa y tipo de beca.');
+            foreach($new['becarios'] as $other){
+                $samePerson=!empty($r['dni'])?($other['dni']??'')===$r['dni']:PortalRules::normal(($other['nombres']??'').' '.($other['apellidos']??''))===PortalRules::normal(($r['nombres']??'').' '.($r['apellidos']??''));
+                if(!($other['deleted']??false)&&$other['id']!==$r['id']&&$samePerson&&$other['periodoId']===$r['periodoId']&&$other['programaId']===$r['programaId']&&$other['tipoId']===$r['tipoId'])throw new PortalError(422,'Beneficiario duplicado en ese periodo, programa y tipo de beca.');
+            }
         }
         $a=&$new['academico'];$o=$old['academico'];
         foreach(self::changedRows($o['estudiantes'],$a['estudiantes'],'academico.estudiantes') as $r){

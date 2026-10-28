@@ -1,51 +1,48 @@
-# INSTITUTO PUBLICO DE ICA — Portal de demostración
+# IESTP Chincha — Portal institucional
 
-[Control de calidad ampliado, correcciones y pasos para actualizar](CONTROL-CALIDAD-ESTANDAR.md).
+Sistema PHP/MySQL adaptado con la información pública de **https://www.iestpchincha.edu.pe/**, consultada el **27 de octubre de 2026**. Conserva el diseño, las rutas, los módulos y las funciones del sistema original.
 
-Esta edición incluye identidad, personas, empresas, contactos e imágenes de demostración. Los correos `.example` son referenciales y las redes/WhatsApp quedan sin destinos activos. Conserva los módulos, rutas, relaciones e identificadores internos del sistema original.
+Incluye ocho programas con sus perfiles y mallas publicadas, plana docente y jerárquica, historia, dos sedes, noticias, becas, documentos de gestión y TUPA. Las imágenes y los documentos se sirven desde archivos locales; no se cargan desde el servidor del sitio de origen.
 
-Los datos neutros se cargan en **instalaciones nuevas** desde `portal-private/data/portal.json`. Actualizar archivos sobre una instalación existente no sustituye el contenido guardado en MySQL. Para presentar esta demo, utiliza una base nueva y la instalación habitual; no reinstales sobre una base de producción. Las evidencias históricas de `evidencias/` corresponden al proyecto original y no forman parte del contenido de esta demo.
+[Mapeo, fuentes y datos pendientes](MAPEO-CHINCHA.md) · [Instalación y operación](INSTRUCCIONES.md) · [Descargar main](https://github.com/ranyuo/chincha/archive/refs/heads/main.zip)
 
-La rama `main` contiene la versión unificada con las correcciones de la revisión profunda, el cargo de Mesa de Partes y el Libro de Reclamaciones.
+## Instalación nueva
 
-[Descargar la versión completa de main](https://github.com/ranyuo/web/archive/refs/heads/main.zip)
+Requiere PHP 8.2 o posterior, PDO MySQL, sesiones, Fileinfo, Zlib y MySQL/MariaDB. No necesita Composer, Node ni compilar archivos en el hosting.
 
-## Tecnologías y carpetas
+1. Sube `portal-private/` junto a `public_html/`, al mismo nivel. Incluye **todo** `public_html/assets/chincha/` y los archivos ocultos. No subas las carpetas de pruebas ni las evidencias históricas.
+2. Copia `portal-private/config.example.php` a `config.php` y configura una base vacía y una `install_key` privada aleatoria. No subas credenciales a GitHub.
+3. Abre `/install.php` con HTTPS y crea tu administrador. Se cargará el contenido institucional de Chincha, sin alumnos, empresas, certificados, cuentas ni expedientes ficticios.
+4. Comprueba el portal y elimina `install.php`, `actualizar.php` y `recuperar.php` cuando ya no sean necesarios.
 
-PHP sin Laravel, MySQL, HTML, CSS y JavaScript. No requiere Composer, Node ni compilar archivos para desplegar en Hostinger. Las bibliotecas de PDF, Excel y QR están incluidas.
+## Actualizar una copia de prueba existente
 
-- `public_html/`: archivos públicos del portal.
-- `portal-private/`: lógica PHP, plantillas, configuración y acceso a MySQL. Debe quedar al mismo nivel que public_html.
-- `tests/`: pruebas de desarrollo; no subir a Hostinger.
-- `evidencias/`: PDF e imágenes de pruebas con datos sintéticos; no subir a Hostinger ni presentarlos como documentos oficiales.
+Subir archivos por sí solo **no sustituye el contenido ya guardado en MySQL**.
 
-## Actualizar tu instalación existente
+1. Respalda archivos y base en hPanel. Conserva `portal-private/config.php` y los respaldos privados.
+2. Sube las dos carpetas del paquete, incluyendo las nuevas imágenes y publicaciones de `assets/chincha/`.
+3. Inicia sesión como administrador en la intranet. Abre `/actualizar.php`, introduce tu `install_key` y marca **«Reemplazar el contenido público de prueba con la información de Chincha»**.
+4. La importación crea un respaldo privado y sustituye el contenido público. Conserva cuentas, contraseñas, solicitudes y registros académicos. Las personas y programas anteriores se conservan despublicados para no romper vínculos; los IDs académicos existentes no se reasignan.
+5. Comprueba el resultado y elimina `actualizar.php` del hosting. Si no marcas la casilla, el actualizador conserva el contenido anterior.
 
-1. Guarda una copia de archivos y base de datos en hPanel.
-2. Descarga el ZIP y sube el contenido de portal-private a la carpeta privada existente. **Conserva config.php y backups**; tu configuración privada no está incluida en este repositorio.
-3. Sube el contenido de public_html al public_html del dominio, incluidos assets/vendor y los archivos ocultos. No crees public_html/public_html.
-4. Abre https://tu-dominio.example/actualizar.php y ejecuta la actualización con tu install_key. Este paso completa códigos de verificación de reclamos anteriores sin cambiar sus números de seguimiento, usuarios o contraseñas.
-5. Limpia la caché y comprueba el portal desde una ventana privada. Vuelve a descargar los cargos y constancias para ver sus cambios.
-6. Al finalizar elimina actualizar.php, recuperar.php e install.php del directorio público. No reinstales ni importes schema.sql sobre tu base existente.
+La importación es una sustitución deliberada del contenido público: respalda primero cualquier edición institucional propia. Los horarios operativos, responsables internos y destinatarios de cada oficina deben configurarse por la institución. El envío de correo sigue deshabilitado como en el sistema original.
 
-[Instrucciones completas](INSTRUCCIONES.md) · [Corrección del Libro de Reclamaciones](CORRECCION-RECLAMOS.md) · [Corrección del cargo de Mesa de Partes](CORRECCION-CARGO.md)
+[Corrección del buscador y actualización de un solo archivo en Hostinger](CORRECCION-BUSCADOR.md).
 
-## Correcciones incluidas
+## Validación de desarrollo
 
-- Cargos nuevos de Mesa de Partes con código aleatorio de 16 caracteres; los anteriores conservan su código completo y ajustan el texto antes del sello.
-- Reclamos y quejas con verificación persistente de 16 caracteres y constancia/hoja PDF con QR de seguimiento.
-- Consulta de reclamos por documento completo o verificación; validaciones claras y compatibilidad con referencias anteriores.
-- Actualización de reclamos anteriores sin cambiar sus números RCL ni su contenido.
-- Correcciones de guardado, sesiones, permisos, versiones, documentos, publicación y formularios de la revisión profunda.
+Usa exclusivamente una base desechable cuyo nombre termine en `_test` y una configuración privada `config.test.php`. Los scripts de pruebas pueden recrear sus tablas.
 
-## Pruebas y evidencias
+```sh
+node tests/demo-content.cjs
+node tests/browser-search.cjs
+php tests/demo-validation.php
+PORTAL_CONFIG_FILE=/ruta/config.test.php php tests/run.php
+PORTAL_CONFIG_FILE=/ruta/config.test.php php tests/parity.php
+PORTAL_CONFIG_FILE=/ruta/config.test.php php tests/chincha-import.php
+PISCO_TEST_CREDENTIALS=/ruta/credenciales-qa.json node tests/browser-chincha.cjs
+```
 
-[Revisión profunda por módulo](REVISION-PROFUNDA.md) · [Verificación general](VERIFICACION.md) · [Control de calidad](CONTROL-CALIDAD.md)
+`browser-chincha.cjs` necesita Playwright y Chromium como herramientas externas de desarrollo, una instalación local de pruebas y un archivo privado con la contraseña del administrador QA (`password`; opcionalmente `install_key` para probar el actualizador). Nunca uses credenciales de producción.
 
-[PDF y consulta del Libro de Reclamaciones](evidencias/reclamos/README.md) · [PDF del cargo con ambas longitudes de código](evidencias/README.md)
-
-Las pruebas se realizaron en PHP/MySQL y Chromium locales. Los QR del Libro fueron decodificados con un lector independiente y su enlace abrió el seguimiento en otra sesión. La aplicación de estos cambios en Hostinger requiere la subida y la actualización indicadas arriba; publicar en GitHub no modifica el hosting.
-
-El correo saliente y la recuperación por correo continúan pendientes por indicación del propietario. Los mensajes y respuestas se guardan en el portal.
-
-La mejora de **Usuarios y roles** incluye edición de permisos por perfil, filtros y control de sesiones. Consulte [MEJORA-USUARIOS-ROLES.md](MEJORA-USUARIOS-ROLES.md) para actualizar Hostinger y conocer el alcance de los permisos editables.
+`chincha-import.php` se ejecuta después de `parity.php`; verifica respaldo, importación repetible, permisos y conservación de datos operativos. Los informes de calidad y las evidencias de la versión de demostración son históricos; la validación de esta adaptación figura en `MAPEO-CHINCHA.md`.
