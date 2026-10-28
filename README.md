@@ -25,6 +25,8 @@ Subir archivos no reemplaza el contenido ya guardado en MySQL.
 
 Las tarifas y los archivos heredados se conservan como referencias pendientes de validación para Pisco, sin presentar las cuentas bancarias heredadas como instrucciones de pago. Las convocatorias y fechas de ejemplo del prototipo quedan en borrador. El correo saliente mantiene las limitaciones del sistema base.
 
+[Revisión de presentación, resultados y pendientes para producción](REVISION-PRODUCCION.md)
+
 ## Validaciones
 
 - `node tests/prototype-content.cjs`: identidad, cinco carreras publicadas, relaciones, ausencia de registros operativos ficticios y 70 imágenes locales con SHA-256.

@@ -15,6 +15,7 @@ foreach(PortalPolicy::definitions()['specs'] as $key=>$spec){
  foreach($spec['fields'] as $f){$name=$f['name'];if($f['unique'])$r[$name]=$f['type']==='number'?2090:('migracion-'.$key.'-'.$name);if($f['required']&&empty($r[$name]))$r[$name]=match($f['type']){'number'=>1,'email'=>'migracion@example.test','date'=>date('Y-m-d'),'datetime-local'=>date('Y-m-d\TH:i'),default=>'Prueba '.$key};}
  foreach(['titulo','nombre','nombres','slug'] as $field)if(isset($r[$field]))$r[$field]='Prueba migracion '.$key.' '.$field;
  if(isset($r['slug']))$r['slug']='migracion-'.$key;
+ if($col==='egresados')$r['programaId']='apsti';
  if($col==='programas')$r['codigo']='MIG99';
  if($col==='personas'){$r['titulo']='Ing.';$r['dni']='79999991';$r['especialidad']='Informática';$r['condicion']='Contratado';$r['correo']='persona-migracion@example.test';}
  if($col==='jerarquica')$r['esDirector']=false;
