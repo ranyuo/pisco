@@ -8207,7 +8207,7 @@
       "anio": 2026,
       "categoria": "4.- MATRÍCULA",
       "codigo": "4.1",
-      "denominacion": "4.1 ATRÍCULA REGULAR",
+      "denominacion": "4.1 MATRÍCULA REGULAR",
       "monto": 120,
       "cuenta": "00-591-003348",
       "requisitos": "",
@@ -8413,7 +8413,7 @@
     {
       "id": "tupa-ch-26",
       "anio": 2026,
-      "categoria": "6.- CONSTANCIA Y CERTIFICADOS",
+      "categoria": "6.- CONSTANCIAS Y CERTIFICADOS",
       "codigo": "6.2",
       "denominacion": "6.2 CONSTANCIA DE MATRÍCULA",
       "monto": 15,
@@ -8429,7 +8429,7 @@
     {
       "id": "tupa-ch-27",
       "anio": 2026,
-      "categoria": "6.- CONSTANCIA Y CERTIFICADOS",
+      "categoria": "6.- CONSTANCIAS Y CERTIFICADOS",
       "codigo": "6.3",
       "denominacion": "6.3 CONSTANCIA DE ESTUDIOS",
       "monto": 15,
@@ -8445,7 +8445,7 @@
     {
       "id": "tupa-ch-28",
       "anio": 2026,
-      "categoria": "6.- CONSTANCIA Y CERTIFICADOS",
+      "categoria": "6.- CONSTANCIAS Y CERTIFICADOS",
       "codigo": "6.4",
       "denominacion": "6.4 CONSTANCIA DE EGRESADO",
       "monto": 15,
@@ -8461,7 +8461,7 @@
     {
       "id": "tupa-ch-29",
       "anio": 2026,
-      "categoria": "6.- CONSTANCIA Y CERTIFICADOS",
+      "categoria": "6.- CONSTANCIAS Y CERTIFICADOS",
       "codigo": "6.5",
       "denominacion": "6.5 CONSTANCIA DE EGRESADO EXTEMPORÁNEO",
       "monto": 30,
@@ -8477,7 +8477,7 @@
     {
       "id": "tupa-ch-30",
       "anio": 2026,
-      "categoria": "6.- CONSTANCIA Y CERTIFICADOS",
+      "categoria": "6.- CONSTANCIAS Y CERTIFICADOS",
       "codigo": "6.6",
       "denominacion": "6.6 CONSTANCIA DE EXPERIENCIAS FORMATIVAS EN SITUACIONES REALES DE TRABAJO (PRÁCTICAS PRE-PROFESIONALES)",
       "monto": 15,
@@ -8493,7 +8493,7 @@
     {
       "id": "tupa-ch-31",
       "anio": 2026,
-      "categoria": "6.- CONSTANCIA Y CERTIFICADOS",
+      "categoria": "6.- CONSTANCIAS Y CERTIFICADOS",
       "codigo": "6.7",
       "denominacion": "6.7 CONSTANCIA DE VACANTE PARA EL TRASLADO AL IESTP \"CHINCHA\"",
       "monto": 50,
@@ -8509,7 +8509,7 @@
     {
       "id": "tupa-ch-32",
       "anio": 2026,
-      "categoria": "6.- CONSTANCIA Y CERTIFICADOS",
+      "categoria": "6.- CONSTANCIAS Y CERTIFICADOS",
       "codigo": "6.8",
       "denominacion": "6.8 CONSTANCIA DE TÍTULO EN TRÁMITE",
       "monto": 50,
@@ -8525,7 +8525,7 @@
     {
       "id": "tupa-ch-33",
       "anio": 2026,
-      "categoria": "6.- CONSTANCIA Y CERTIFICADOS",
+      "categoria": "6.- CONSTANCIAS Y CERTIFICADOS",
       "codigo": "6.9",
       "denominacion": "6.9 CONSTANCIA DEL TERCIO SUPERIOR",
       "monto": 50,
@@ -8541,7 +8541,7 @@
     {
       "id": "tupa-ch-34",
       "anio": 2026,
-      "categoria": "6.- CONSTANCIA Y CERTIFICADOS",
+      "categoria": "6.- CONSTANCIAS Y CERTIFICADOS",
       "codigo": "6.10",
       "denominacion": "6.10 RÉCORD DE NOTAS (6 SEMESTRES)",
       "monto": 50,
@@ -8557,7 +8557,7 @@
     {
       "id": "tupa-ch-35",
       "anio": 2026,
-      "categoria": "6.- CONSTANCIA Y CERTIFICADOS",
+      "categoria": "6.- CONSTANCIAS Y CERTIFICADOS",
       "codigo": "6.11",
       "denominacion": "6.11 BOLETA DE NOTAS",
       "monto": 5,
@@ -8573,7 +8573,7 @@
     {
       "id": "tupa-ch-36",
       "anio": 2026,
-      "categoria": "6.- CONSTANCIA Y CERTIFICADOS",
+      "categoria": "6.- CONSTANCIAS Y CERTIFICADOS",
       "codigo": "6.12",
       "denominacion": "6.12 CONSTANCIA DE TRABAJO",
       "monto": 15,
@@ -8589,7 +8589,7 @@
     {
       "id": "tupa-ch-37",
       "anio": 2026,
-      "categoria": "6.- CONSTANCIA Y CERTIFICADOS",
+      "categoria": "6.- CONSTANCIAS Y CERTIFICADOS",
       "codigo": "6.13",
       "denominacion": "6.13 CERTIFICADO MODULAR / DUPLICADO",
       "monto": 30,
@@ -8605,7 +8605,7 @@
     {
       "id": "tupa-ch-38",
       "anio": 2026,
-      "categoria": "6.- CONSTANCIA Y CERTIFICADOS",
+      "categoria": "6.- CONSTANCIAS Y CERTIFICADOS",
       "codigo": "6.14",
       "denominacion": "6.14 CERTIFICADO DE INGLÉS - TITULACIÓN",
       "monto": 10,
@@ -8621,7 +8621,7 @@
     {
       "id": "tupa-ch-39",
       "anio": 2026,
-      "categoria": "6.- CONSTANCIA Y CERTIFICADOS",
+      "categoria": "6.- CONSTANCIAS Y CERTIFICADOS",
       "codigo": "6.15",
       "denominacion": "6.15 CONSTANCIA DE NO ADEUDAR",
       "monto": 10,
@@ -8637,7 +8637,7 @@
     {
       "id": "tupa-ch-40",
       "anio": 2026,
-      "categoria": "6.- CONSTANCIA Y CERTIFICADOS",
+      "categoria": "6.- CONSTANCIAS Y CERTIFICADOS",
       "codigo": "6.16",
       "denominacion": "6.16 CERTIFICADO DE ESTUDIOS DE ESTUDIOS SUPERIORES",
       "monto": 120,
@@ -8653,7 +8653,7 @@
     {
       "id": "tupa-ch-41",
       "anio": 2026,
-      "categoria": "6.- CONSTANCIA Y CERTIFICADOS",
+      "categoria": "6.- CONSTANCIAS Y CERTIFICADOS",
       "codigo": "6.17",
       "denominacion": "6.17 DUPLICADO DE FORMATO DE TÍTULO",
       "monto": 200,
@@ -8669,7 +8669,7 @@
     {
       "id": "tupa-ch-42",
       "anio": 2026,
-      "categoria": "6.- CONSTANCIA Y CERTIFICADOS",
+      "categoria": "6.- CONSTANCIAS Y CERTIFICADOS",
       "codigo": "6.18",
       "denominacion": "6.18 CONSTANCIA DE ACTIVIDADES",
       "monto": 10,
@@ -8957,7 +8957,7 @@
     {
       "id": "tupa-ch-60",
       "anio": 2026,
-      "categoria": "12.-ALQUILERES",
+      "categoria": "12.- ALQUILERES",
       "codigo": "12.2",
       "denominacion": "12.2 ALQUILER DE ESPACIO PARA EL SERVICIO DE FOTOCOPIAS - MENSUAL",
       "monto": 300,
@@ -9118,7 +9118,7 @@
     {
       "id": "tupa-ch-70",
       "anio": 2026,
-      "categoria": "12.-ALQUILERES",
+      "categoria": "12.- ALQUILERES",
       "codigo": "12.1",
       "denominacion": "12.1 ALQUILER DE TALLER DE MECÁNICA DE PRODUCCIÓN - MENSUAL",
       "monto": 3000,
@@ -9134,7 +9134,7 @@
     {
       "id": "tupa-ch-71",
       "anio": 2026,
-      "categoria": "12.-ALQUILERES",
+      "categoria": "12.- ALQUILERES",
       "codigo": "12.3-71",
       "denominacion": "12.3 ALQUILER/CONCESIÓN DEL COMEDOR ESTUDIANTIL - MENSUAL",
       "monto": 1200,
@@ -9151,7 +9151,7 @@
     {
       "id": "tupa-ch-72",
       "anio": 2026,
-      "categoria": "12.-ALQUILERES",
+      "categoria": "12.- ALQUILERES",
       "codigo": "12.4",
       "denominacion": "12.4 ALQUILER DE TERRENO EN EL F. CAÑAPAY - HECTÁREA",
       "monto": 3500,
@@ -9167,7 +9167,7 @@
     {
       "id": "tupa-ch-73",
       "anio": 2026,
-      "categoria": "12.-ALQUILERES",
+      "categoria": "12.- ALQUILERES",
       "codigo": "12.5",
       "denominacion": "12.5 ALQUILER DE TOGAS",
       "monto": 10,
@@ -9183,7 +9183,7 @@
     {
       "id": "tupa-ch-74",
       "anio": 2026,
-      "categoria": "12.-ALQUILERES",
+      "categoria": "12.- ALQUILERES",
       "codigo": "12.6",
       "denominacion": "12.6 ALQUILER DE CAMPO DEPORTIVO SINTÉTICO",
       "monto": 20,
