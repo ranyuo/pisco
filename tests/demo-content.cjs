@@ -1,15 +1,2 @@
-/* Contenido institucional, relaciones y archivos locales de Chincha. El nombre se conserva por compatibilidad. */
-const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),crypto=require('node:crypto'),vm=require('node:vm');
-const root=path.resolve(__dirname,'..'),data=JSON.parse(fs.readFileSync(path.join(root,'portal-private/data/portal.json'))),sources=JSON.parse(fs.readFileSync(path.join(root,'portal-private/data/chincha-sources.json')));
-assert.equal(data.config.inst.nombreCorto,'IESTP “Chincha”');assert.equal(data.config.inst.fechaCreacion,'1967-01-13');assert.equal(data.config.inst.correo,'direcciongeneral@iestpchincha.edu.pe');assert.equal(data.academico.cfg.nombre,data.config.inst.nombre);
-assert.equal(data.programas.length,8);assert.equal(data.becarios.length,30);assert.equal(data.tupa.length,74);
-const exists=(rows,id)=>rows.some(r=>r.id===id);for(const j of data.jerarquica)assert.ok(exists(data.personas,j.personaId));
-for(const p of data.programas){assert.ok(exists(data.personas,p.coordinadorId));assert.ok(p.modulos.length>=3);const semesters=new Set(p.modulos.flatMap(m=>m.uds.map(u=>u.semestre)));assert.deepEqual([...semesters].sort(),[1,2,3,4,5,6]);assert.ok(data.academico.programas.some(a=>a.id===data.academico.progMap[p.id]&&a.pid===p.id));}
-for(const b of data.becarios){assert.ok(exists(data.programas,b.programaId));assert.ok(exists(data.becasPeriodos,b.periodoId));assert.ok(exists(data.tiposBeca,b.tipoId));assert.equal(b.dni,'');assert.ok(b.nombres&&b.apellidos);}
-for(const row of data.personas){assert.equal(row.dni,'');assert.ok(row.nombres&&row.apellidos);assert.ok(!row.cv?.autoriza?.ok);}
-for(const key of ['estudiantes','notas','certs','titulos','empresas','ofertas','sesiones'])assert.equal(data.academico[key].length,0,key+' no debe contener registros ficticios');assert.equal(data.certificados.length,0);
-const unique=new Set();for(const r of data.tupa){assert.ok(Number.isFinite(r.monto)&&r.monto>=0);assert.ok(!unique.has(r.codigo));unique.add(r.codigo);assert.match(r.cuenta,/^00-591-/);}
-let localReferences=0;function inspect(v){if(typeof v==='string'){assert.ok(!/instituto-ica\.example|Profesional de Ejemplo|ph:/.test(v),v.slice(0,100));if(v.startsWith('/assets/chincha/')){assert.ok(fs.existsSync(path.join(root,'public_html',v)),v);localReferences++;}}else if(Array.isArray(v))v.forEach(inspect);else if(v&&typeof v==='object')Object.values(v).forEach(inspect);}inspect(data);
-let files=0;for(const a of sources.archivos){if(a.error)continue;const bytes=fs.readFileSync(path.join(root,'public_html',a.url));assert.equal(bytes.length,a.bytes);assert.equal(crypto.createHash('sha256').update(bytes).digest('hex'),a.sha256,a.url);if(a.type==='application/pdf')assert.equal(bytes.subarray(0,5).toString(),'%PDF-');files++;}
-assert.equal(files,119);assert.ok(localReferences>100);const view=fs.readFileSync(path.join(root,'portal-private/views/portal.php'),'utf8');for(const script of view.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g))if(!script[1].includes('<?'))new vm.Script(script[1]);
-console.log('Identidad, ocho programas y semestres, directorios, becas, TUPA, ausencia de datos ficticios, '+files+' archivos y sintaxis JavaScript: OK');
+/* Validación de la información de Pisco basada en el prototipo aportado. */
+require('./prototype-content.cjs');

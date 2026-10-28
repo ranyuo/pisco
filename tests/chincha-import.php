@@ -8,6 +8,8 @@ $app=portal_app();$app->login(['username'=>'admin','password'=>'PruebaOriginal-2
 // Importar nunca debe reinterpretar los expedientes según el orden del catálogo nuevo.
 $legacy=$app->bootstrap();$data=$legacy['data'];$data['academico']['progMap']['cont']=2;$data['academico']['progMap']['cc']=3;
 $app->save(['revision'=>$legacy['revision'],'data'=>$data]);
+$legacyUnitId='qa-assigned-'.bin2hex(random_bytes(4));
+$custom=$app->bootstrap();$custom['data']['tupa'][0]['monto']=123.45;$custom['data']['config']['mpv']['maxMB']=13;foreach($custom['data']['programas'] as &$program)if($program['id']==='apsti'){$unit=$program['modulos'][0]['uds'][0];$unit['id']=$legacyUnitId;$unit['nombre']='Unidad asignada QA '.$legacyUnitId;$program['modulos'][0]['uds'][]=$unit;}unset($program);$custom['data']['personas'][]=['id'=>$legacyUnitId,'nombres'=>'Docente','apellidos'=>'QA asignación','especialidad'=>'Asignación de prueba','tipo'=>'Docente','estado'=>'Borrador','programas'=>['apsti'],'uds'=>[['programaId'=>'apsti','udId'=>$legacyUnitId]]];$app->save(['revision'=>$custom['revision'],'data'=>$custom['data']]);
 $before=$app->bootstrap()['data'];$users=$app->db()->query('SELECT id,username,password,role,profile FROM pisco_users ORDER BY id')->fetchAll();
 $checks=0;
 function checkChincha(bool $ok,string $label):void{global $checks;if(!$ok)throw new RuntimeException($label);$checks++;echo "OK $label\n";}
@@ -15,8 +17,12 @@ function checkChincha(bool $ok,string $label):void{global $checks;if(!$ok)throw 
 $app->logout();try{ChinchaContent::apply($app);throw new RuntimeException('Se permitió importar sin sesión.');}catch(PortalError $e){checkChincha(in_array($e->status,[401,403],true),'Importación rechazada sin administrador');}
 $app->login(['username'=>'admin','password'=>'PruebaOriginal-2026!']);
 $result=ChinchaContent::apply($app);$after=$app->bootstrap()['data'];
-checkChincha(count(array_filter($after['programas'],fn($r)=>$r['estado']==='Publicado'))===8,'Ocho programas publicados');
-checkChincha($after['config']['inst']['nombreCorto']==='IESTP “Chincha”','Identidad institucional importada');
+checkChincha($after['tupa']===$before['tupa'],'Tarifas ausentes del prototipo se conservan con las ediciones existentes');
+checkChincha($after['config']['mpv']['maxMB']===13,'Límite operativo de archivos conservado');
+checkChincha(PortalPolicy::find($after['personas'],'id',$legacyUnitId)['uds'][0]['udId']===$legacyUnitId,'Asignación docente anterior conservada');
+$program=PortalPolicy::find($after['programas'],'id','apsti');checkChincha(in_array($legacyUnitId,array_column(array_merge(...array_column($program['modulos'],'uds')),'id'),true),'Unidad didáctica asignada conservada');
+checkChincha(count(array_filter($after['programas'],fn($r)=>$r['estado']==='Publicado'))===5,'Cinco programas de Pisco publicados');
+checkChincha($after['config']['inst']['nombreCorto']==='IESTP PISCO','Identidad institucional importada');
 checkChincha(is_file(PortalBackups::path($result['backup'])),'Respaldo privado creado antes de importar');
 checkChincha($users===$app->db()->query('SELECT id,username,password,role,profile FROM pisco_users ORDER BY id')->fetchAll(),'Cuentas, roles y contraseñas conservados');
 foreach(['mensajes','reclamos','expedientes','certificados','suscriptores'] as $key)checkChincha(PortalPolicy::equal($before[$key],$after[$key]),'Se conserva '.$key);

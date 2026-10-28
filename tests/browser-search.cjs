@@ -18,9 +18,9 @@ if (!['127.0.0.1', 'localhost'].includes(new URL(base).hostname)) throw Error('U
     for (const [query, expected] of [
       ['mesa partes', 'Mesa de Partes Virtual'], ['partes mesa', 'Mesa de Partes Virtual'],
       ['arquitectura ti', 'Arquitectura de Plataformas'], ['APSTI', 'Arquitectura de Plataformas'],
-      ['  CONSTRUCCIÓN   CIVIL ', 'Construcción Civil'], ['construccion civil', 'Construcción Civil'],
+      ['  HOSTELERÍA   RESTAURANTES ', 'Administración de Servicios de Hostelería'], ['hosteleria restaurantes', 'Administración de Servicios de Hostelería'],
       ['admision', 'Admisión'], ['matrícula', 'Matrícula'], ['becas', 'Becas'],
-      ['licenciamiento', 'Licenciamiento'], ['Doris Gonzales', 'Doris Elizabeth Gonzales Alejos'],
+      ['licenciamiento', 'Licenciamiento'], ['Pedro Tasayco', 'Pedro Armando Tasayco Díaz'],
       ['3.1', '3.1 DERECHO DE INSCRIPCIÓN']
     ]) {
       const links = await search(query);
