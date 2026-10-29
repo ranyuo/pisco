@@ -2233,7 +2233,15 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const strip = s => String(s ?? "").replace(/<[^>]+>/g," ").replace(/&amp;/g,"&").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/\s+/g," ").trim();
 const byId = (arr,id) => arr.find(x => x.id == id) || null;
-const nextId = arr => arr.reduce((m,x) => Math.max(m, x.id||0), 0) + 1;
+// Cada perfil recibe una proyección parcial: su máximo local no es un ID global.
+const nextId = arr => {
+  let id;
+  do {
+    const bits = crypto.getRandomValues(new Uint32Array(2));
+    id = (bits[0] & 0x1fffff) * 0x100000000 + bits[1];
+  } while (!id || arr.some(x => Number(x.id) === id));
+  return id;
+};
 const prog = id => byId(DB.programas,id) || {cod:"—",nombre:"—"};
 const ud = id => byId(DB.uds,id) || {nombre:"—",cod:"—"};
 const docente = id => byId(DB.docentes,id);
@@ -4161,7 +4169,7 @@ return {
   persist(){ return save() },
   notifyTo(to, txt, go){ notify(to, txt, go) },
   logAct(a, m, d){ log(a, m, d) },
-  nextIdOf(col){ return Math.max(0, ...DB[col].map(x => +x.id || 0)) + 1 },
+  nextIdOf(col){ return nextId(DB[col]) },
   vinOpts(){ return vinOpts() },
   findEst(k){ k = String(k || "").trim(); const e = k && DB.estudiantes.find(x => x.dni === k); return e ? {id:e.id, dni:e.dni, nom:e.nom, estado:e.estado} : null },
   estById(id){ const e = byId(DB.estudiantes, +id); return e ? {id:e.id, dni:e.dni, nom:e.nom, estado:e.estado} : null },

@@ -35,6 +35,7 @@ Las tarifas y los archivos heredados se conservan como referencias pendientes de
 - `php tests/chincha-import.php`: nombre histórico del test de importación; ahora valida Pisco, conservación de información y asignaciones anteriores.
 - `php tests/demo-installation.php`: instalación en una base de pruebas vacía.
 - `tests/browser-prototype.cjs`: páginas públicas, cinco carreras, directorio, intranet, edición, PDF y actualización web.
+- `node tests/browser-scoped-record-ids.cjs`: cuatro primeras postulaciones desde alumnos con datos aislados; comprueba identificadores únicos y conservación de solicitudes anteriores. Requiere `tests/parity.php` y el servidor local de pruebas en el puerto 8086. Crea cuentas sintéticas, las desactiva y retira sus registros operativos al terminar.
 
 Las pruebas que modifican datos se ejecutan solo con `config.test.php` y bases `_test`. No se modificó Hostinger. `MAPEO-CHINCHA.md` documenta la procedencia histórica del sistema y los archivos complementarios, no la fuente primaria actual de Pisco.
 
