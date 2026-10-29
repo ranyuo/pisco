@@ -38,17 +38,23 @@ final class PortalFiles
         if($depth>40)throw new PortalError(422,'El documento contiene demasiados niveles de datos.');
         if(isset($value['fileId'])){
             $meta=self::metadata($app,$value);
-            unset($value['data'],$value['key']);return [...$value,...$meta];
+            unset($value['data'],$value['key']);return self::withMetadata($value,$meta);
         }
         if(isset($value['data'])&&is_string($value['data'])&&str_starts_with($value['data'],'data:')){
             if(!preg_match('/^data:[^;,]+;base64,(.*)$/s',$value['data'],$m)||strlen($m[1])>57_000_000)throw new PortalError(422,'Archivo codificado no válido.');
             $bytes=base64_decode($m[1],true);if($bytes===false)throw new PortalError(422,'Archivo codificado no válido.');
             $key=hash('sha256',$bytes).'|'.($value['original']??$value['nombre']??$value['n']??'archivo.pdf');
             $meta=$aliases[$key]??=self::store($app,$value['original']??$value['nombre']??$value['n']??'archivo.pdf',$bytes);
-            unset($value['data'],$value['key']);return [...$value,...$meta];
+            unset($value['data'],$value['key']);return self::withMetadata($value,$meta);
         }
         foreach($value as $key=>$child)if(is_array($child))$value[$key]=self::persist($app,$child,$aliases,$depth+1,is_array($previous)?($previous[$key]??null):null);
         return $value;
+    }
+    private static function withMetadata(array $value,array $meta): array
+    {
+        // El título editorial puede diferir del archivo; identidad, tipo y hash siguen siendo del servidor.
+        $name=is_string($value['nombre']??null)?trim($value['nombre']):'';
+        return [...$value,...$meta,'nombre'=>$name!==''?$name:$meta['nombre']];
     }
     public static function serve(PortalApp $app,string $id): never
     {

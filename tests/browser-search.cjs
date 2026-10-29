@@ -38,6 +38,7 @@ if (!['127.0.0.1', 'localhost'].includes(new URL(base).hostname)) throw Error('U
     await page.waitForURL('**/#/buscar?q=arquitectura%20ti'); assert.ok((await page.locator('main article').allTextContents()).some(x => x.includes('Arquitectura de Plataformas'))); checked++;
     await page.setViewportSize({width: 390, height: 844}); await page.goto(base + '/'); await page.locator('[data-menu]').click();
     await page.locator('#q2').fill('matricula'); await page.locator('#q2').press('Enter'); await page.waitForURL('**/#/buscar?q=matricula');
+    await page.waitForFunction(() => document.querySelector('#bs-q')?.value === 'matricula');
     assert.ok((await page.locator('main').innerText()).includes('Matrícula'));
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)); checked++;
     await search('a'); assert.ok((await page.locator('main').innerText()).includes('al menos dos')); checked++;

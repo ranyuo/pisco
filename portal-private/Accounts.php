@@ -91,9 +91,14 @@ trait PortalAccounts
     {
         if($authorize){$this->requireAdmin();$this->rate('accounts',120,60);}
         $data=$this->accountInput($input);
-        try{$this->db()->prepare('INSERT INTO pisco_users (username,name,email,password,role,profile) VALUES (?,?,?,?,?,?)')->execute([$data['username'],$data['name'],$data['email'],password_hash($data['password'],PASSWORD_DEFAULT),$data['role'],json_encode($data['profile'],JSON_THROW_ON_ERROR)]);}
+        try{$this->db()->prepare('INSERT INTO pisco_users (username,name,email,password,role,profile,active) VALUES (?,?,?,?,?,?,?)')->execute([$data['username'],$data['name'],$data['email'],password_hash($data['password'],PASSWORD_DEFAULT),$data['role'],json_encode($data['profile'],JSON_THROW_ON_ERROR),$this->accountActive($input)]);}
         catch(PDOException $e){if($e->getCode()==='23000')throw new PortalError(422,'El usuario o correo ya está registrado.');throw $e;}
         PortalAudit::write($this,'Crear cuenta','Cuentas',(string)$this->db()->lastInsertId(),['usuario'=>$data['username'],'rol'=>$data['role']]);
+    }
+    private function accountActive(array $input): int
+    {
+        $active=$input['active']??$input['estado']??'Activo';
+        return ($active===true||$active===1||$active==='Activo')?1:0;
     }
     public function accountOperation(array $input): array
     {
@@ -123,7 +128,7 @@ trait PortalAccounts
         if(isset($input['expected'])){$dto=$this->accountDto($old);$expected=['username'=>$dto['usuario'],'name'=>$dto['nombre'],'email'=>$dto['correo']??'','role'=>$dto['rol'],'estado'=>$dto['estado']];foreach(['vin','dni','personaId','programaId','area','cargo'] as $key)$expected[$key]=$dto[$key]??'';if(!PortalPolicy::equal($expected,$input['expected']))throw new PortalError(409,'Otra persona modificó esta cuenta. Recarga antes de continuar.');}
         if($action==='unlock'){PortalAudit::write($this,'Desbloquear cuenta','Cuentas',(string)$id);$this->db()->prepare('UPDATE pisco_users SET login_failures=0,locked_until=NULL WHERE id=?')->execute([$id]);return ['ok'=>true];}
         if($action!=='update')throw new PortalError(422,'Acción no válida.');
-        $data=$this->accountInput($fields,false);$active=($fields['active']??$fields['estado']??'Activo');$active=($active===true||$active===1||$active==='Activo')?1:0;
+        $data=$this->accountInput($fields,false);$active=$this->accountActive($fields);
         if($data['username']!==$old['username'])throw new PortalError(422,'El nombre de usuario existente no se puede cambiar.');
         if((int)$actor['server_id']===$id&&(!$active||$data['role']!=='admin'))throw new PortalError(422,'No puedes quitarte el acceso de administrador.');
         if($old['role']==='admin'&&(!$active||$data['role']!=='admin')&&(int)$this->db()->query("SELECT COUNT(*) FROM pisco_users WHERE role='admin' AND active=1")->fetchColumn()<=1)throw new PortalError(422,'Debe quedar al menos un administrador activo.');
