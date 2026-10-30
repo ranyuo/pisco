@@ -37,13 +37,26 @@ function portal_headers(): void
     header('X-Content-Type-Options: nosniff');
     header('X-Frame-Options: SAMEORIGIN');
     header('Referrer-Policy: strict-origin-when-cross-origin');
+    header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
+    // HSTS solo sobre HTTPS para no bloquear pruebas locales por HTTP.
+    if ((($_SERVER['HTTPS'] ?? '') !== '' && $_SERVER['HTTPS'] !== 'off') || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https') header('Strict-Transport-Security: max-age=31536000');
+    header_remove('X-Powered-By');
+}
+
+/** URL de un recurso estático con versión (fecha de modificación) para que el navegador lo guarde en caché sin quedar desactualizado. */
+function portal_asset(string $file): string
+{
+    $root = realpath((string) ($_SERVER['DOCUMENT_ROOT'] ?? '')) ?: dirname(__DIR__).'/public_html';
+    $url = str_starts_with($file, '/') ? $file : '/assets/app/'.$file;
+    $path = $root.$url;
+    return htmlspecialchars($url.'?v='.(is_file($path) ? filemtime($path) : '0'), ENT_QUOTES, 'UTF-8');
 }
 
 function portal_json(array $body, int $status = 200): never
 {
     http_response_code($status);
     header('Content-Type: application/json; charset=utf-8');
-    echo json_encode($body, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_THROW_ON_ERROR);
+    echo json_encode(PortalContent::forJson($body), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_THROW_ON_ERROR);
     exit;
 }
 

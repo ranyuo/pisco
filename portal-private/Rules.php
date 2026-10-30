@@ -143,7 +143,7 @@ final class PortalRules
         if(is_string($host)&&preg_match('/^(?:[a-z0-9.-]+|\[[0-9a-f:]+\])(?::[0-9]{1,5})?$/iD',$host))$a['cfg']['web']=$host;
         foreach($new['jerarquica'] as $leader)if(!($leader['deleted']??false)&&($leader['esDirector']??false)&&($leader['estado']??'')==='Publicado'){
             $person=PortalPolicy::find($new['personas'],'id',$leader['personaId']);
-            if($person&&!($person['deleted']??false))$a['cfg']['director']=trim(($person['titulo']??'').' '.$person['nombres'].' '.$person['apellidos']);
+            if($person&&!($person['deleted']??false))$a['cfg']['director']=trim(preg_replace('/\s+/u',' ',($person['titulo']??'').' '.($person['nombres']??'').' '.($person['apellidos']??'')));
             break;
         }
         foreach($new['programas'] as $p){if($p['deleted']??false)continue;$id=$a['progMap'][$p['id']]??null;

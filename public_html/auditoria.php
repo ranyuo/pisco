@@ -4,7 +4,7 @@ require dirname(__DIR__).'/portal-private/bootstrap.php';portal_headers();
 try{
     $app=portal_app();$app->requireAdmin();$where=[];$args=[];
     $q=is_string($_GET['q']??null)?trim($_GET['q']):'';if(strlen($q)>200)throw new PortalError(422,'Filtro demasiado largo.');
-    if($q!==''){$where[]='(username LIKE ? OR entity LIKE ? OR record_key LIKE ? OR action LIKE ?)';array_push($args,...array_fill(0,4,'%'.$q.'%'));}
+    if($q!==''){$where[]='(username LIKE ? OR entity LIKE ? OR record_key LIKE ? OR action LIKE ? OR CAST(details AS CHAR) LIKE ?)';array_push($args,...array_fill(0,5,'%'.$q.'%'));}
     foreach(['desde'=>'>=','hasta'=>'<='] as $key=>$operator){$v=$_GET[$key]??'';if($v==='')continue;$d=is_string($v)?DateTimeImmutable::createFromFormat('!Y-m-d',$v):false;if(!$d||$d->format('Y-m-d')!==$v)throw new PortalError(422,'Fecha de filtro no válida.');$where[]='occurred_at '.$operator.' ?';$args[]=$v.($key==='hasta'?' 23:59:59.999999':' 00:00:00');}
     $condition=$where?' WHERE '.implode(' AND ',$where):'';
     if(($_GET['download']??'')==='csv'){

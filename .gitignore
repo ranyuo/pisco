@@ -6,3 +6,5 @@
 /portal-private/*.lock
 /portal-private/*.log
 /tests/.results/
+/public_html/assets/cache/*
+!/public_html/assets/cache/.htaccess

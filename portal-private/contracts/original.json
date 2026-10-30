@@ -770,7 +770,7 @@
         {
           "name": "apellidos",
           "type": "text",
-          "required": true,
+          "required": false,
           "publishRequired": false,
           "unique": false
         },
@@ -903,14 +903,14 @@
         {
           "name": "lat",
           "type": "number",
-          "required": true,
+          "required": false,
           "publishRequired": false,
           "unique": false
         },
         {
           "name": "lng",
           "type": "number",
-          "required": true,
+          "required": false,
           "publishRequired": false,
           "unique": false
         },

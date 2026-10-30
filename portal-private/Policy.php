@@ -14,8 +14,22 @@ final class PortalPolicy
         'documentos'=>['transparencia'],'tiposDocumento'=>['transparencia'],'tupa'=>['transparencia'],
         'tupaDocs'=>['transparencia'],'inversiones'=>['transparencia'],'licenciamiento'=>['transparencia'],
         'convocatorias'=>['transparencia'],'servicios'=>['transparencia'],
-        'mensajes'=>['atencion'],'reclamos'=>['atencion','directivo'],'expedientes'=>['atencion','directivo'],
+        'mensajes'=>['atencion'],'reclamos'=>['atencion'],'expedientes'=>['atencion','secretaria','coordinador','imagen','transparencia'],
     ];
+    /** Colecciones que un rol puede consultar sin modificarlas (Dirección supervisa reclamos y expedientes). */
+    public const READ_ONLY = ['reclamos'=>['directivo'],'expedientes'=>['directivo']];
+    /** Personal que solo atiende los expedientes derivados al área asignada en su cuenta. */
+    private static function areaInbox(string $key,array $user): bool
+    {
+        return $key==='expedientes'&&!in_array(self::role($user),['admin','atencion','directivo'],true)&&trim((string)($user['area']??''))!=='';
+    }
+    private static function topAllowed(string $key,array $user,bool $write): bool
+    {
+        $role=self::role($user);if($role==='admin')return true;
+        $roles=[...(self::TOP[$key]??[]),...($write?[]:(self::READ_ONLY[$key]??[]))];
+        if(!in_array($role,$roles,true))return false;
+        return self::areaInbox($key,$user)||($key!=='expedientes'||in_array($role,['atencion','directivo'],true))&&self::can($user,self::collectionModule($key,$user));
+    }
     private const ACADEMIC_MODULE = ['estudiantes'=>'alumnos','sesiones'=>'horarios','publicados'=>'horarios',
         'certs'=>'certificados','notas'=>'certificados','titulos'=>'titulos','empresas'=>'bolsa','ofertas'=>'bolsa',
         'postulaciones'=>'bolsa','perfilesLab'=>'bolsa','perfilesDoc'=>'docentes','uds'=>'config','docentes'=>'config',
@@ -77,6 +91,7 @@ final class PortalPolicy
         $role=self::role($user);
         if($role==='coordinador' && in_array($key,['programas','egresados'],true)) return (string)($key==='programas'?($row['id']??''):($row['programaId']??''))===(string)($user['programaId']??'');
         if($role==='docente' && $key==='personas') return (string)($row['id']??'')===(string)($user['personaId']??'');
+        if(self::areaInbox($key,$user)) return (string)($row['area']??'')===(string)$user['area'];
         return true;
     }
     private static function academicScope(string $key,array $row,array $data,array $user): bool
@@ -134,8 +149,8 @@ final class PortalPolicy
         $out=$public;$role=self::role($user);
         // Counters and academic settings contain no credentials and are required by existing forms.
         $out['config']=$full['config'];
-        foreach(self::TOP as $key=>$roles){
-            if(!in_array($role,$roles,true)||!self::can($user,self::collectionModule($key,$user)))continue;
+        foreach(array_keys([...self::TOP,...self::READ_ONLY]) as $key){
+            if(!self::topAllowed($key,$user,false))continue;
             $value=$full[$key]??[];
             if(is_array($value)&&array_is_list($value)) {
                 $allowed=array_values(array_filter($value,fn($r)=>self::topScope($key,$r,$user)));
@@ -153,7 +168,7 @@ final class PortalPolicy
             if(!$read||in_array($key,['cfg','perms','publicados'],true))continue;
             if(!array_is_list($a[$key]??[]))continue;
             $rows=array_values(array_filter($a[$key]??[],fn($r)=>self::academicScope($key,$r,$full,$user)));
-            if($role==='empresa'&&$key==='estudiantes')$rows=array_map(fn($r)=>array_intersect_key($r,array_flip(['id','dni','nom','prog','estado','correo','tel'])),$rows);
+            if($role==='empresa'&&$key==='estudiantes')$rows=array_map(function($r){$r=array_intersect_key($r,array_flip(['id','dni','nom','prog','estado','correo','tel']));$r['dni']='****'.substr((string)($r['dni']??''),-4);return $r;},$rows);
             $p[$key]=self::mergeVisible($p[$key]??[],$rows,'academico.'.$key);
         }
         if(in_array($role,['estudiante','egresado'],true)) {
@@ -194,7 +209,7 @@ final class PortalPolicy
                 }
                 continue;
             }
-            if($role!=='admin'&&(!in_array($role,self::TOP[$key]??[],true)||!self::can($user,self::collectionModule($key,$user))))throw new PortalError(403,'Tu rol no puede modificar '.$key.'.');
+            if($role!=='admin'&&!self::topAllowed($key,$user,true))throw new PortalError(403,'Tu rol no puede modificar '.$key.'.');
             if(is_array($value)&&array_is_list($value)&&is_array($full[$key]??null)&&array_is_list($full[$key])){
                 $out[$key]=self::mergeRows($key,$full[$key],$visible[$key]??[],$value,$user,fn($row)=>self::topScope($key,$row,$user));
             }elseif($role==='admin'||isset(self::TOP[$key]))$out[$key]=$value;

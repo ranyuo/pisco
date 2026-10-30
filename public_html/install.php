@@ -32,7 +32,7 @@ function e(string $value): string { return htmlspecialchars($value, ENT_QUOTES, 
 <input type="hidden" name="_csrf" value="<?= e($_SESSION['csrf'] ?? '') ?>">
 <label>Clave privada de instalación<input type="password" name="install_key" required minlength="32" autocomplete="off"></label>
 <label>Tu nombre<input name="name" required maxlength="150" autocomplete="name"></label>
-<label>Usuario de administrador<input name="username" required pattern="[a-zA-Z0-9._-]{3,80}" maxlength="80" autocomplete="username"></label>
+<label>Usuario de administrador<input name="username" required pattern="[a-zA-Z0-9._\-]{3,80}" maxlength="80" autocomplete="username"></label>
 <label>Correo del administrador<input type="email" name="email" required maxlength="254" autocomplete="email"></label>
 <label>Contraseña nueva (12 a 72 caracteres)<input type="password" name="password" required minlength="12" maxlength="72" autocomplete="new-password"></label>
 <label>Repetir contraseña<input type="password" name="password_confirmation" required minlength="12" maxlength="72" autocomplete="new-password"></label>
