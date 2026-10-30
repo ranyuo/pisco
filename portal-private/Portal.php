@@ -135,9 +135,11 @@ final class PortalApp
     public function bootstrap(): array
     {
         $state=$this->state();$full=json_decode($state['data'],true,flags:JSON_THROW_ON_ERROR);$user=$this->user();
-        try{$full['visitas']=$this->db()->query('SELECT visit_day,views FROM pisco_visits')->fetchAll(PDO::FETCH_KEY_PAIR);}catch(PDOException $e){if($e->getCode()!=='42S02')throw $e;$full['visitas']=[];}
+        $full['visitas']=$this->visitCounts();
         $data=PortalPolicy::project($full,$user,$this->publicData($full));
         $data['usuarios']=$this->visibleAccounts($user,$full);
+        // Visitantes: las imágenes incrustadas en base64 se sirven como archivos estáticos cacheables.
+        if(!$user)$data=$this->externalizeImages($data);
         if($user&&$user['rol']==='admin'){$data['auditoria']=[...PortalAudit::rows($this),...PortalAudit::legacy($this,$full)];$data['academico']['bitacora']=array_map(fn($r)=>['id'=>$r['id'],'f'=>$r['fecha'],'u'=>$r['usuario'],'a'=>$r['accion'],'m'=>$r['entidad'],'d'=>$r['registro'].' · '.$r['detalle']],PortalAudit::rows($this));}
         return ['data'=>$data,'revision'=>(int)$state['revision'],'user'=>$user,'csrf'=>$_SESSION['csrf'],'schema_version'=>PortalSchema::VERSION,'roles'=>PortalPolicy::definitions()['roles']];
     }
@@ -189,7 +191,7 @@ final class PortalApp
     {
         $data = PortalContent::normalize($data);
         foreach(['noticias','eventos'] as $key)foreach($data[$key]??[] as $i=>$r)if(!empty($r['fecha'])){try{$data[$key][$i]['fecha']=(new DateTimeImmutable($r['fecha'],new DateTimeZone($this->config['timezone']??'America/Lima')))->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d\TH:i:s.v\Z');}catch(Exception){}}
-        return $data;
+        return PortalContent::normalize($data);
     }
 
     private function transaction(callable $operation): array
@@ -267,6 +269,7 @@ final class PortalApp
     public function save(array $input): array
     {
         $user=$this->requireUser();$this->rate('save',120,60);
+        if(!empty($user['cambiarClave']))throw new PortalError(403,'Cambia tu contraseña temporal antes de continuar (Mi cuenta).');
         if(!isset($input['revision'])||!is_int($input['revision'])||(!isset($input['patch'])&&!is_array($input['data']??null)))throw new PortalError(422,'Contenido o revisión no válidos.');
         return $this->transaction(function()use($input,$user){
             $state=$this->state(true);$user=$this->requireUser();if(!isset($input['patch'])&&(int)$state['revision']!==$input['revision'])throw new PortalError(409,'Otra persona guardó cambios. Recarga la página antes de continuar.');
@@ -291,9 +294,39 @@ final class PortalApp
             $this->updateState($data,(int)$state['revision']+1);
             $data=$this->normalizeDates($data);
             $projected=PortalPolicy::project($data,$this->user(),$this->publicData($data));
+            // Las visitas viven en pisco_visits; sin esto la respuesta las vaciaba y el panel mostraba 0.
+            $projected['visitas']=$this->visitCounts();
             if($this->user()&&$this->user()['rol']==='admin'){$projected['auditoria']=[...PortalAudit::rows($this),...PortalAudit::legacy($this,$data)];$projected['academico']['bitacora']=array_map(fn($r)=>['id'=>$r['id'],'f'=>$r['fecha'],'u'=>$r['usuario'],'a'=>$r['accion'],'m'=>$r['entidad'],'d'=>$r['registro'].' · '.$r['detalle']],PortalAudit::rows($this));}
             return ['revision'=>(int)$state['revision']+1,'user'=>$this->user(),'users'=>$this->visibleAccounts($this->user(),$data),'normalized'=>$projected,'files'=>array_values($aliases)];
         });
+    }
+    private const INLINE_IMAGE_MIN=8192;
+    /** Reemplaza imágenes data: grandes por /assets/cache/<hash>.<ext>; si no se puede escribir, conserva el original. */
+    private function externalizeImages(array $data): array
+    {
+        $root=realpath((string)($_SERVER['DOCUMENT_ROOT']??''))?:dirname(__DIR__).'/public_html';
+        $dir=$root.'/assets/cache';
+        if(!is_dir($dir)&&!@mkdir($dir,0755,true)&&!is_dir($dir))return $data;
+        if(!is_writable($dir))return $data;
+        $types=['image/png'=>'png','image/jpeg'=>'jpg','image/webp'=>'webp','image/gif'=>'gif'];
+        $walk=function(mixed $value)use(&$walk,$dir,$types):mixed{
+            if(is_array($value)){foreach($value as $k=>$v)$value[$k]=$walk($v);return $value;}
+            if(!is_string($value)||strlen($value)<self::INLINE_IMAGE_MIN||!preg_match('#^data:(image/(?:png|jpeg|webp|gif));base64,#',$value,$m))return $value;
+            $name=substr(hash('sha256',$value),0,32).'.'.$types[$m[1]];$file=$dir.'/'.$name;
+            if(!is_file($file)){
+                $bytes=base64_decode(substr($value,strlen($m[0])),true);
+                if($bytes===false||(new finfo(FILEINFO_MIME_TYPE))->buffer($bytes)!==$m[1])return $value;
+                $tmp=$file.'.'.bin2hex(random_bytes(4)).'.tmp';
+                if(@file_put_contents($tmp,$bytes,LOCK_EX)===false||!@rename($tmp,$file)){@unlink($tmp);return $value;}
+            }
+            return '/assets/cache/'.$name;
+        };
+        return $walk($data);
+    }
+    private function visitCounts(): array
+    {
+        try{return $this->db()->query('SELECT visit_day,views FROM pisco_visits')->fetchAll(PDO::FETCH_KEY_PAIR);}
+        catch(PDOException $e){if($e->getCode()!=='42S02')throw $e;return [];}
     }
     public function track(array $input): array
     {
@@ -529,7 +562,9 @@ final class PortalApp
             if ($type === 'certificados') {
                 $record = array_intersect_key($record, array_flip(['id', 'codigo', 'nombres', 'programaId', 'tipo', 'detalle', 'fecha', 'estado', 'origen', 'motivo']));
             } else {
-                $record['historial'] = array_map(fn ($item) => array_intersect_key($item, array_flip(['fecha', 'estado'])), $record['historial'] ?? []);
+                // Los proveídos internos no se publican; la observación y la respuesta del expediente sí, porque son para el ciudadano.
+                $citizen = $type === 'expedientes' ? ['Observado', 'Atendido', 'Archivado'] : [];
+                $record['historial'] = array_map(fn ($item) => array_intersect_key($item, array_flip(in_array($item['estado'] ?? '', $citizen, true) ? ['fecha', 'estado', 'nota'] : ['fecha', 'estado'])), $record['historial'] ?? []);
             }
             return ['record' => $record];
         }

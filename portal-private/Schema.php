@@ -1,9 +1,10 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__.'/Content.php';
+
 final class PortalSchema
 {
-    public const VERSION = 4;
+    public const VERSION = 5;
     public static function apply(PDO $db): void
     {
         foreach (explode(';', file_get_contents(__DIR__.'/schema.sql')) as $sql) if (trim($sql) !== '') $db->exec($sql);
@@ -30,6 +31,7 @@ final class PortalSchema
             if($row){$data=json_decode($row['data'],true,flags:JSON_THROW_ON_ERROR);$normalized=PortalContent::normalize($data);$changed=$data!==$normalized;$data=$normalized;$used=[];
                 foreach($data['reclamos']??[] as $claim)if(!empty($claim['cargoCod']))$used[strtoupper($claim['cargoCod'])]=true;
                 if(isset($data['reclamos']))foreach($data['reclamos'] as &$claim)if(empty($claim['cargoCod'])){do{$code=strtoupper(bin2hex(random_bytes(8)));}while(isset($used[$code]));$claim['cargoCod']=$code;$used[$code]=true;$changed=true;}unset($claim);
+                $normalized=PortalContent::normalize($data);$changed=$changed||$normalized!==$data;$data=$normalized;
                 if($changed)$db->prepare('UPDATE pisco_state SET data=?,revision=revision+1 WHERE id=1')->execute([json_encode($data,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE)]);
             }
             if($ownTransaction)$db->commit();
