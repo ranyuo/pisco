@@ -23,7 +23,9 @@
       "descripcion": "Institución pública de educación superior tecnológica de la provincia de Pisco, región Ica, independizada como Instituto Superior Tecnológico Estatal \"Pisco\" por R.M. N.º 806-84-ED del 17 de julio de 1984. Más de 40 años de excelencia académica.",
       "logo": "/assets/pisco/bcca0278a38e622e7fed.png",
       "colorPrimario": "#0b1d3f",
-      "denominacionAnio": "Año de la Esperanza y el Fortalecimiento de la Democracia"
+      "denominacionAnio": "Año de la Esperanza y el Fortalecimiento de la Democracia",
+      "distrito": "Pisco",
+      "region": "Ica"
     },
     "redes": {
       "facebook": "https://www.facebook.com/IESTPPISC0",
@@ -212,7 +214,8 @@
           "d": "Talleres complementarios para fortalecer tu perfil profesional.",
           "i": "globe"
         }
-      ]
+      ],
+      "programasVista": "carrusel"
     },
     "tema": "pisco",
     "mpv": {
@@ -373,7 +376,8 @@
         "base": true
       }
     },
-    "enlacesV2": true
+    "enlacesV2": true,
+    "diseno": "clasico"
   },
   "slides": [
     {

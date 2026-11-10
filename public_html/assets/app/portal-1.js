@@ -86,10 +86,10 @@ const MODS = [
   ["inicio","Mi panel","",""],
   ["alumnos","Maestro de alumnos","1.0","Gestión académica"],
   ["horarios","Programación de horarios","1.1","Gestión académica"],
-  ["certificados","Constancias y certificación modular","1.2","Gestión académica"],
+  ["certificados","Certificación modular","1.2","Gestión académica"],
   ["titulos","Grados y títulos","1.3","Gestión académica"],
   ["bolsa","Bolsa laboral","2.3","Servicios"],
-  ["config","Configuración académica","","Configuración"]];
+  ["config","Configuración académica general","","Configuración"]];
 /* ---------- iconos (SVG en línea) ---------- */
 const _i = d => `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 const ICO = {
@@ -124,7 +124,7 @@ const PALETAS = [
   ["ica","Verde institucional","Verde institucional y dorado.",{bg:"#f3f6f5",side:"#0b2b28",brand:"#0f5e57",acc:"#c08424"}],
   ["nazca","Granate Nazca","Granate y ocre, inspirado en la región Ica.",{bg:"#f7f4f3",side:"#2a0b10",brand:"#8a1c2b",acc:"#c8902e"}],
   ["pacifico","Azul Pacífico","Azul marino y turquesa, sobrio y formal.",{bg:"#f3f5f9",side:"#0b1a33",brand:"#1d4f9c",acc:"#0ea5b7"}],
-  ["web","Web institucional","Colores del portal institucional www.iestppisco.edu.pe. Puede ajustarlos abajo.",null]];
+  ["web","Web institucional","Colores del portal web institucional. Puede ajustarlos abajo.",null]];
 const WEB_DEF = {brand:"#ff4f01", acc:"#ff8c01", side:"#131d3b"};
 const HEX = /^#[0-9a-f]{6}$/i;
 const inkFor = hex => { const n = parseInt(hex.slice(1),16), c = [n>>16&255, n>>8&255, n&255].map(v => { v /= 255; return v <= .03928 ? v/12.92 : Math.pow((v+.055)/1.055, 2.4) }); return (.2126*c[0] + .7152*c[1] + .0722*c[2]) > .45 ? "#111111" : "#ffffff" };
@@ -254,10 +254,11 @@ function confirmBox(title, msg, label, fn){ openModal({title, body:`<p>${msg}</p
 /* ---------- CRUD genérico ---------- */
 const ENT = {};
 function crudForm(ek, row, defaults){
-  const E = ENT[ek], fields = E.fields(row);if(ek==='programas'&&row?.pid)for(const f of fields)if(['cod','nombre'].includes(f.k)){f.ro=true;f.hint='Se administra desde Programas de estudio del portal.';}
+  if(lvl(ENT[ek].permMod)<2){toast("No tiene permiso de gestión.");return;}
+  const E = ENT[ek], fields = E.fields(row);if(ek==='programas'&&row?.pid)for(const f of fields)if(['cod','nombre'].includes(f.k)){f.ro=true;f.hint='Se administra desde el catálogo único de Programas de estudios.';}
   if(!row && !defaults && E.defaults) defaults = E.defaults();
   const base = row || defaults || {};
-  openModal({ title:(row ? "Editar " : "Nuevo ") + E.one, wide:E.wide, body:`<div class="f">${fields.map(f => fieldHtml(f, base[f.k])).join("")}</div>${E.formNote ? `<p class="note">${E.formNote}</p>` : ""}`,
+  openModal({ title:(row ? "Editar " : "Nuevo ") + E.one, wide:E.wide, body:`<div class="f">${fields.map(f => fieldHtml(f, base[f.k])).join("")}</div>${E.formNote ? `<p class="note">${E.formNote}</p>` : ""}${ek==="modulos"&&row?`<h3>Unidades didácticas asociadas</h3><p class="note">${DB.uds.filter(u=>u.mod===row.id).map(u=>esc(u.cod+" · "+u.nombre+" · Ciclo "+u.ciclo)).join("<br>")||"Sin unidades asociadas. Se vinculan desde Unidades didácticas."}</p>`:""}`,
     submit: row ? "Guardar cambios" : "Registrar",
     onSubmit: form => {
       const {vals, errs} = readFields(fields, form, DB[E.col], row && row.id);
@@ -267,6 +268,18 @@ function crudForm(ek, row, defaults){
       else { const r = Object.assign({id:nextId(DB[E.col])}, defaults || {}, vals); DB[E.col].push(r); E.after && E.after(r, true); log("Registrar", E.mod, E.label(r)); }
       if(!save())return false; toast("Cambios guardados en el servidor.");return true;
     }});
+  if(row&&["certs","titulos"].includes(ek)){
+    const form=document.querySelector('#mform');
+    for(const input of form.querySelectorAll('.mb input,.mb select,.mb textarea'))if(input.name!=='estadoDoc'){if(input.tagName==='SELECT')input.disabled=true;else input.readOnly=true;}
+    form.querySelector('.mb').insertAdjacentHTML('beforeend','<p class="note">Los datos de emisión son históricos. Puede anular este documento y registrar uno nuevo con otro código.</p>');
+  }
+  if(["uds","certs"].includes(ek)){
+    const form=document.querySelector('.ix [name="mod"]')?.closest('form') || document.querySelector('[name="mod"]')?.closest('form');
+    if(form){const source=form.querySelector(ek==='uds'?'[name="prog"]':'[name="est"]'),target=form.querySelector('[name="mod"]');
+      const fill=()=>{const selected=+target.value,programId=ek==='uds'?+source.value:est(+source.value).prog;
+        target.innerHTML=`<option value="">${ek==='uds'?'Pendiente de asociación':'Seleccione un módulo'}</option>`+DB.modulos.filter(m=>m.prog===programId).map(m=>`<option value="${m.id}" ${m.id===selected?'selected':''}>${esc(m.cod+' · '+m.nombre)}</option>`).join('');};
+      if(source&&target){source.addEventListener('change',fill);fill();}}
+  }
 }
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
 function crud(ek, o = {}){
@@ -288,6 +301,7 @@ function crud(ek, o = {}){
     </tbody></table></div><span class="count">${rows.length} registro(s)</span>${o.note ? `<p class="note">${o.note}</p>` : ""}</section>`;
 }
 function crudDelete(ek, id){
+  if(lvl(ENT[ek].permMod)<2)return;
   const E = ENT[ek], row = byId(DB[E.col], id);
   const block = E.refs && E.refs(row);
   if(block){ openModal({title:"No se puede eliminar", body:`<div class="alert warn">${block}</div><p class="note">Para mantener la integridad de la información, primero reasigne o elimine los registros relacionados.</p>`}); return }
@@ -405,7 +419,7 @@ const unb64u = t => { const bin = atob(t.replace(/-/g,"+").replace(/_/g,"/")); r
 /* el QR abre la verificación pública con el código y los datos del documento */
 const verifyText = d => HOST.verifyUrl(d.cod);
 function paperHead(){ const C = docCfg(), col = docColor(), band = C.estilo !== "blanco", im = (x, cls) => `<img class="plogo ${cls}" src="${esc(x.src)}" alt="">`;
-  return `<div class="ph ${band ? "band" : ""}" style="--doc:${col}">${C.logoIzq ? im(C.logoIzq,"l") : ""}<div class="pht"><b>${esc(DB.cfg.nombre)}</b><small>${esc(docSub())}</small></div>${C.logoDer ? im(C.logoDer,"r") : band ? "" : `<div class="seal" style="box-shadow:inset 0 0 0 2px ${col};color:${col};background:none">IESTP<br>PISCO</div>`}</div>${C.lema ? `<p class="lema">“${esc(C.lema)}”</p>` : ""}` }
+  return `<div class="ph ${band ? "band" : ""}" style="--doc:${col}">${C.logoIzq ? im(C.logoIzq,"l") : ""}<div class="pht"><b>${esc(DB.cfg.nombre)}</b><small>${esc(docSub())}</small></div>${C.logoDer ? im(C.logoDer,"r") : band ? "" : `<div class="seal" style="box-shadow:inset 0 0 0 2px ${col};color:${col};background:none">IESTP<br>${esc((HOST.inst && HOST.inst().logoSigla) || DB.cfg.siglas || "")}</div>`}</div>${C.lema ? `<p class="lema">“${esc(C.lema)}”</p>` : ""}` }
 function paperSign(){ const C = docCfg(); return C.firma ? `<div class="pfirma">${C.firmaImg ? `<img src="${esc(C.firmaImg.src)}" alt="Firma">` : ""}<span></span><b>${esc(docFirmaNom())}</b><small>${esc(C.firmaCargo || "")}</small></div>` : "" }
 function paperFoot(d){ const pie = docCfg().pie; return paperSign() + `<div class="pf"><div><b style="color:var(--paper-ink)">Código de verificación: <span class="mono">${d.cod}</span></b><br>Emitido el ${fd(d.fecha)} · Verifique su autenticidad en el portal institucional, opción “Verificar documento”.</div><div class="qr" aria-label="Código QR de verificación">${qrSvg(verifyText(d))}</div></div>${pie ? `<p class="ppie">${esc(pie)}</p>` : ""}` }
 function pdfVerify(doc, d, y){
@@ -437,7 +451,7 @@ const PAT_MAIL = [/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i, "Ingrese un correo válido."]
 const PAT_PER = [/^\d{4}-(I|II)$/, "Use el formato 2026-I o 2026-II."];
 const cnt = (arr, fn) => arr.filter(fn).length;
 
-ENT.programas = { col:"programas", one:"programa de estudios", title:"Programas de estudios", mod:"Horarios", permMod:"horarios",
+ENT.programas = { col:"programas", one:"programa de estudios", title:"Programas de estudios", mod:"Horarios", permMod:"config",
   fields:() => [
     {k:"cod",l:"Código",req:true,uniq:true,upper:true,pat:[/^[A-Z0-9-]{2,10}$/,"De 2 a 10 caracteres, sin espacios."]},
     {k:"nombre",l:"Nombre del programa",req:true,w:1},
@@ -449,21 +463,23 @@ ENT.programas = { col:"programas", one:"programa de estudios", title:"Programas 
   label:r => r.cod,
   refs:r => { const n = cnt(DB.uds,u => u.prog === r.id) + cnt(DB.estudiantes,e => e.prog === r.id) + cnt(DB.modulos,m => m.prog === r.id); return n ? `El programa ${r.cod} tiene ${n} registro(s) asociados (unidades didácticas, módulos o estudiantes). Puede desactivarlo en lugar de eliminarlo.` : "" } };
 
-ENT.uds = { col:"uds", one:"unidad didáctica", title:"Unidades didácticas", mod:"Horarios", permMod:"horarios",mod2:"config",
+ENT.uds = { col:"uds", one:"unidad didáctica", title:"Unidades didácticas", mod:"Horarios", permMod:"config",
   fields:() => [
     {k:"cod",l:"Código",req:true,uniq:true,upper:true},
     {k:"nombre",l:"Nombre de la unidad didáctica",req:true,w:1},
     {k:"prog",l:"Programa de estudios",t:"select",req:true,num:true,opts:optsProg(true)},
+    {k:"mod",l:"Módulo formativo",t:"select",num:true,none:"Pendiente de asociación",opts:() => DB.modulos.map(m=>[m.id,`${prog(m.prog).cod} · ${m.cod} · ${m.nombre}`]),hint:"Seleccione un módulo del mismo programa; los registros existentes pueden quedar pendientes."},
     {k:"ciclo",l:"Ciclo académico",t:"select",req:true,opts:optsCiclo},
     {k:"horas",l:"Horas semanales",t:"number",req:true,min:1,max:12,def:3},
     {k:"cred",l:"Créditos",t:"number",req:true,min:1,max:8,def:2}],
-  cols:[{h:"Código",v:r => mono(r.cod)},{h:"Unidad didáctica",v:r => esc(r.nombre)},{h:"Programa",v:r => prog(r.prog).cod},{h:"Ciclo",v:r => r.ciclo},{h:"Horas/sem",v:r => r.horas},{h:"Créditos",v:r => r.cred},{h:"Periodo",v:() => DB.cfg.periodo}],
+  cols:[{h:"Código",v:r => mono(r.cod)},{h:"Unidad didáctica",v:r => esc(r.nombre)},{h:"Programa",v:r => prog(r.prog).cod},{h:"Módulo",v:r => {const m=byId(DB.modulos,r.mod);return m?esc(m.cod):pill("Pendiente","p-warn")}},{h:"Ciclo",v:r => r.ciclo},{h:"Horas/sem",v:r => r.horas},{h:"Créditos",v:r => r.cred},{h:"Periodo",v:() => DB.cfg.periodo}],
+  check:v => v.mod && byId(DB.modulos,v.mod)?.prog!==v.prog ? {mod:"El módulo debe pertenecer al programa seleccionado."}:null,
   sort:(a,b) => a.prog - b.prog || a.ciclo.localeCompare(b.ciclo) || a.cod.localeCompare(b.cod),
   label:r => `${r.cod} ${r.nombre}`,
   refs:r => { const n = cnt(DB.sesiones,s => s.ud === r.id); return n ? `La unidad ${r.nombre} está programada en ${n} sesión(es) de horario.` : "" },
   afterDel:r => DB.docentes.forEach(d => d.uds = d.uds.filter(x => x !== r.id)) };
 
-ENT.docentes = { col:"docentes", one:"docente", title:"Carga docente", mod:"Horarios", permMod:"horarios",mod2:"config", wide:true,
+ENT.docentes = { col:"docentes", one:"docente", title:"Carga docente", mod:"Horarios", permMod:"config", wide:true,
   fields:() => [
     {k:"per",l:"Docente (de la Plana docente)",t:"select",req:true,w:1,opts:() => HOST.docentes().map(p => [p.id, `${p.nom} · ${p.esp}`]),hint:"Los datos personales y la hoja de vida se mantienen en Plana docente."},
     {k:"uds",l:"Unidades didácticas que puede asumir",t:"multi",num:true,w:1,opts:() => DB.uds.map(u => [u.id, `${prog(u.prog).cod} · ${u.nombre}`])},
@@ -477,7 +493,7 @@ ENT.docentes = { col:"docentes", one:"docente", title:"Carga docente", mod:"Hora
   after:r => { syncDocentes() },
   refs:r => { const n = cnt(DB.sesiones,s => s.doc === r.id); return n ? `${r.nom} tiene ${n} sesión(es) asignadas en el horario. Reasígnelas antes de eliminar.` : "" } };
 
-ENT.ambientes = { col:"ambientes", one:"ambiente", title:"Ambientes académicos", mod:"Horarios", permMod:"horarios",mod2:"config",
+ENT.ambientes = { col:"ambientes", one:"ambiente", title:"Ambientes académicos", mod:"Horarios", permMod:"config",
   fields:() => [
     {k:"cod",l:"Código",req:true,uniq:true,upper:true},
     {k:"tipo",l:"Tipo",t:"select",req:true,opts:() => [["Aula","Aula"],["Laboratorio","Laboratorio"],["Taller","Taller"]]},
@@ -490,17 +506,19 @@ ENT.ambientes = { col:"ambientes", one:"ambiente", title:"Ambientes académicos"
   label:r => r.cod,
   refs:r => { const n = cnt(DB.sesiones,s => s.amb === r.id); return n ? `El ambiente ${r.cod} está asignado en ${n} sesión(es).` : "" } };
 
-ENT.modulos = { col:"modulos", one:"módulo formativo", title:"Módulos formativos", mod:"Certificados", permMod:"certificados",mod2:"config",
+ENT.modulos = { col:"modulos", one:"módulo formativo", title:"Módulos formativos", mod:"Certificados", permMod:"config",
   fields:() => [
     {k:"prog",l:"Programa de estudios",t:"select",req:true,num:true,opts:optsProg(true)},
     {k:"cod",l:"Código",req:true,upper:true,ph:"MF1"},
     {k:"nombre",l:"Nombre del módulo",req:true,w:1},
-    {k:"ciclos",l:"Ciclos asociados",req:true,ph:"I – II"}],
+    {k:"ciclos",l:"Ciclos asociados",req:true,ph:"I – II"},
+    {k:"horasTotal",l:"Horas totales de formación",t:"number",min:1,max:10000},
+    {k:"tipoHoras",l:"Tipo de horas",t:"select",opts:()=>[["Académicas","Académicas"],["Lectivas","Lectivas"]],def:"Académicas"}],
   check:(v,row) => DB.modulos.some(m => m.prog === v.prog && m.cod === v.cod && (!row || m.id !== row.id)) ? {cod:"Ese código ya existe en el programa."} : null,
   cols:[{h:"Programa",v:r => prog(r.prog).cod},{h:"Código",v:r => mono(r.cod)},{h:"Módulo formativo",v:r => esc(r.nombre)},{h:"Ciclos",v:r => r.ciclos},{h:"Certificados emitidos",v:r => cnt(DB.certs,c => c.mod === r.id)}],
   sort:(a,b) => a.prog - b.prog || a.cod.localeCompare(b.cod),
   label:r => `${prog(r.prog).cod}-${r.cod}`,
-  refs:r => { const n = cnt(DB.certs,c => c.mod === r.id); return n ? `Hay ${n} certificación(es) registradas para este módulo.` : "" } };
+  refs:r => { const n = cnt(DB.certs,c => c.mod === r.id)+cnt(DB.uds,u=>u.mod===r.id); return n ? `Hay ${n} certificación(es) registradas para este módulo.` : "" } };
 
 const optsEst = (filter) => () => DB.estudiantes.filter(filter || (() => true)).sort((a,b) => a.nom.localeCompare(b.nom)).map(e => [e.id, `${e.dni} · ${e.nom} (${prog(e.prog).cod})`]);
 ENT.estudiantes = { col:"estudiantes", one:"alumno", title:"Maestro de alumnos", mod:"Maestro de alumnos", permMod:"alumnos", wide:true,
@@ -525,13 +543,17 @@ ENT.certs = { col:"certs", one:"certificación modular", title:"Certificaciones 
     {k:"est",l:"Estudiante",t:"select",req:true,num:true,w:1,opts:optsEst()},
     {k:"mod",l:"Módulo certificado",t:"select",req:true,num:true,w:1,opts:() => DB.modulos.map(m => [m.id, `${prog(m.prog).cod}-${m.cod} · ${m.nombre}`])},
     {k:"fecha",l:"Fecha de certificación",t:"date",req:true,def:today},
+    {k:"institucion",l:"Institución emisora",def:()=>DB.cfg.nombre,w:1},
+    {k:"estadoDoc",l:"Estado del documento",t:"select",opts:()=>[["Válido","Válido"],["Anulado","Anulado"]],def:"Válido"},
+    {k:"horasDoc",l:"Horas consignadas en el documento",t:"number",min:1,max:10000},
+    {k:"tipoHoras",l:"Tipo de horas",t:"select",opts:()=>[["Académicas","Académicas"],["Lectivas","Lectivas"]],def:"Académicas"},
     {k:"num",l:"N.º de certificado",req:true,uniq:true,upper:true,def:() => `CM-${pad(DB.seq.cert+1).padStart(4,"0")}-${today().slice(0,4)}`}],
   check:(v,row) => { const e = est(v.est), m = byId(DB.modulos,v.mod); const er = {};
     if(m && e && m.prog !== e.prog) er.mod = `El módulo pertenece a ${prog(m.prog).cod} y el estudiante es de ${prog(e.prog).cod}.`;
-    if(DB.certs.some(c => c.est === v.est && c.mod === v.mod && (!row || c.id !== row.id))) er.mod = "El estudiante ya tiene registrado este módulo.";
+    if(v.estadoDoc!=="Anulado"&&DB.certs.some(c => c.estadoDoc!=="Anulado"&&c.est === v.est && c.mod === v.mod && (!row || c.id !== row.id))) er.mod = "El estudiante ya tiene registrado este módulo.";
     if(v.fecha > today()) er.fecha = "La fecha no puede ser futura."; return er },
   after:(r,isNew) => { if(isNew){ DB.seq.cert++; const u = HOST.users().find(x => x.vin === "est:"+r.est); if(u) notify("u:"+u.id, `Se registró tu certificación del módulo ${byId(DB.modulos,r.mod).cod}`, "certificados") } },
-  cols:[{h:"N.º certificado",v:r => mono(r.num)},{h:"Estudiante",v:r => esc(est(r.est).nom)},{h:"DNI",v:r => mono(est(r.est).dni)},{h:"Programa",v:r => prog(est(r.est).prog).cod},{h:"Módulo",v:r => { const m = byId(DB.modulos,r.mod) || {}; return `${esc(m.cod||"")} · ${esc(m.nombre||"")}` }},{h:"Fecha",v:r => fd(r.fecha)}],
+  cols:[{h:"N.º certificado",v:r => mono(r.num)},{h:"Estudiante",v:r => esc(est(r.est).nom)},{h:"DNI",v:r => mono(est(r.est).dni)},{h:"Programa",v:r => prog(est(r.est).prog).cod},{h:"Módulo",v:r => { const m = byId(DB.modulos,r.mod) || {}; return `${esc(m.cod||"")} · ${esc(m.nombre||"")}` }},{h:"Fecha",v:r => fd(r.fecha)},{h:"Estado",v:r=>estPill(r.estadoDoc||"Válido")}],
   sort:(a,b) => b.fecha.localeCompare(a.fecha),
   label:r => r.num };
 
@@ -551,10 +573,16 @@ ENT.titulos = { col:"titulos", one:"título", title:"Registro institucional de t
     {k:"culm",l:"Fecha de culminación",t:"date",req:true},
     {k:"tit",l:"Fecha de titulación",t:"date",req:true,def:today},
     {k:"cod",l:"Código institucional del título",req:true,uniq:true,upper:true},
+    {k:"institucion",l:"Institución emisora",def:()=>DB.cfg.nombre,w:1},
+    {k:"estadoDoc",l:"Estado del documento",t:"select",opts:()=>[["Válido","Válido"],["Anulado","Anulado"]],def:"Válido"},
+    {k:"denominacion",l:"Denominación del grado o título",w:1,hint:"Si se deja vacío se utiliza el título del programa."},
+    {k:"nivel",l:"Nivel educativo",def:"Superior tecnológico"},
+    {k:"pais",l:"País",def:"Perú"},
+    {k:"region",l:"Región",def:()=>HOST.inst?(HOST.inst().region||""):""},
     {k:"resol",l:"Resolución directoral",req:true,w:1,ph:"R.D. N.º 000-2026-INSTITUTO"}],
-  check:(v,row) => { const er = {}; if(v.culm && v.tit && v.tit < v.culm) er.tit = "Debe ser posterior a la fecha de culminación."; if(DB.titulos.some(t => t.est === v.est && (!row || t.id !== row.id))) er.est = "Este egresado ya tiene un título registrado."; return er },
+  check:(v,row) => { const er = {}; if(v.culm && v.tit && v.tit < v.culm) er.tit = "Debe ser posterior a la fecha de culminación."; if(v.estadoDoc!=="Anulado"&&DB.titulos.some(t => t.estadoDoc!=="Anulado"&&t.est === v.est && (!row || t.id !== row.id))) er.est = "Este egresado ya tiene un título registrado."; return er },
   after:r => { const e = est(r.est); if(e.id) e.estado = "Titulado"; const u = HOST.users().find(x => x.vin === "est:"+r.est); if(u) notify("u:"+u.id,"Tu título fue registrado en la intranet institucional","titulos") },
-  cols:[{h:"Código",v:r => mono(r.cod)},{h:"Titulado",v:r => esc(est(r.est).nom)},{h:"DNI",v:r => mono(est(r.est).dni)},{h:"Programa",v:r => prog(est(r.est).prog).cod},{h:"Culminación",v:r => fd(r.culm)},{h:"Titulación",v:r => fd(r.tit)},{h:"Resolución",v:r => esc(r.resol)}],
+  cols:[{h:"Estado",v:r=>estPill(r.estadoDoc||"Válido")},{h:"Código",v:r => mono(r.cod)},{h:"Titulado",v:r => esc(est(r.est).nom)},{h:"DNI",v:r => mono(est(r.est).dni)},{h:"Programa",v:r => prog(est(r.est).prog).cod},{h:"Culminación",v:r => fd(r.culm)},{h:"Titulación",v:r => fd(r.tit)},{h:"Resolución",v:r => esc(r.resol)}],
   sort:(a,b) => b.tit.localeCompare(a.tit),
   label:r => r.cod };
 
@@ -660,7 +688,7 @@ const plazoRec = r => { const due = addBiz(r.fecha, DB.cfg.plazoReclamo); return
 function renderLogin(){
   const demo = HOST.users().filter(u => u.estado === "Activo");
   return `<div class="login">
-  <section class="lb"><div class="brandbox" style="border:0;padding:0">${sealHtml()}<div><b>${esc(DB.cfg.siglas)}</b><small>Ministerio de Educación · DRE Ica · Pisco</small></div></div>
+  <section class="lb"><div class="brandbox" style="border:0;padding:0">${sealHtml()}<div><b>${esc(DB.cfg.siglas)}</b><small>${esc(["Ministerio de Educación", ...(HOST.inst ? [HOST.inst().region ? "DRE " + HOST.inst().region : "", HOST.inst().distrito || ""] : [])].filter(Boolean).join(" · "))}</small></div></div>
     <h1>Intranet Institucional</h1>
     <p>Plataforma de gestión académica y administrativa: horarios, certificaciones, títulos, trámite documentario, libro de reclamaciones, bolsa laboral y portafolio docente en un solo sistema.</p>
     <div class="mods">${MODS.filter(m => m[2]).map(m => `<div>${ICO[m[0]] || ""}<span>${m[2]}</span>${m[1]}</div>`).join("")}</div>
@@ -961,10 +989,10 @@ function horarioXLS(title, ss, turno, byDoc){
 }
 V.horarios = () => {
   const r = R(), L = lvl("horarios");
-  const intro = head("1.1 · Gestión académica","Programación de horarios","Configuración base, programación por sección sobre la grilla, validación automática de cruces y publicación para estudiantes y docentes.");
+  const intro = head("1.1 · Gestión académica","Programación de horarios","Programación por sección, validación de cruces y publicación. Los maestros se administran en Configuración académica general.");
   if(L >= 2 || r === "dir"){
     const val = validar(), nb = cnt(val, v => v.t === "bad");
-    const T = tabs("horarios", [["prog","Programación"],["valid","Validaciones", val.length || ""],["docente","Vista por docente"],["ambiente","Vista por ambiente"],...(L >= 2 ? [["config","Configuración"]] : [])]);
+    const T = tabs("horarios", [["prog","Programación"],["valid","Validaciones", val.length || ""],["docente","Vista por docente"],["ambiente","Vista por ambiente"]]);
     let body = "";
     if(T.cur === "prog"){
       const g = grupoSel(), ss = sesGrupo(g), k = gkey(g.p,g.c,g.s,g.t), pub = DB.publicados[k];
@@ -998,10 +1026,6 @@ V.horarios = () => {
       const ss = a ? DB.sesiones.filter(s => s.amb === a.id && s.per === DB.cfg.periodo) : [];
       body = `<section class="panel"><div class="f"><div class="fld"><label for="hamb">Ambiente</label><select id="hamb" data-chg="hamb">${DB.ambientes.map(x => `<option value="${x.id}" ${x.id === aId ? "selected" : ""}>${x.cod} · ${x.tipo}</option>`).join("")}</select></div></div>
         ${a ? `<div class="panel-h"><div><h2>${esc(a.cod)} · ${esc(a.tipo)}</h2><span class="note">${esc(a.ubic)} · Capacidad ${a.cap} · ${ss.length} sesiones</span></div></div>${shiftGrids(ss, {byDoc:true, showErr:true})}` : empty("No hay ambientes registrados.")}</section>`;
-    }
-    if(T.cur === "config"){
-      const sub = S.tab.hconf || "programas";
-      body = `<div class="pubtabs">${[["uds","Unidades didácticas"],["docentes","Carga docente"],["ambientes","Ambientes"],["bloques","Bloques y receso"]].map(([k,l]) => `<button class="${k === sub ? "on" : ""}" data-tab="hconf:${k}">${l}</button>`).join("")}</div>` + (sub === "bloques" ? bloquesView() : crud(sub));
     }
     return intro + T.html + body;
   }
@@ -1046,7 +1070,7 @@ function consultaCert(pub){
     ${q ? (res.length === 1 ? fichaEst(res[0], {pub}) : res.length ? `<section class="panel"><h2>${res.length} coincidencias</h2><div class="tw"><table><tbody>${res.map(e => `<tr><td>${mono(e.dni)}</td><td>${esc(e.nom)}</td><td>${prog(e.prog).cod}</td><td>${estPill(e.estado)}</td><td class="act"><button class="btn sec sm" data-act="pickEst" data-id="${e.dni}">Ver</button></td></tr>`).join("")}</tbody></table></div></section>` : `<div class="alert warn">No se encontró ningún estudiante con “${esc(q)}”.</div>`) : ""}`;
 }
 function docCert(e){
-  const cs = DB.certs.filter(c => c.est === e.id); if(!cs.length){ toast("El estudiante no tiene certificaciones registradas."); return }
+  const cs = DB.certs.filter(c => c.est === e.id && c.estadoDoc!=="Anulado"); if(!cs.length){ toast("El estudiante no tiene certificaciones registradas."); return }
   const d = emitDoc("cert", e.id, e.nom); if(!d)return;
   const rows = cs.map(c => { const m = byId(DB.modulos,c.mod); return [`${m.cod} · ${m.nombre}`, c.num, fd(c.fecha)] });
   openModal({title:"Constancia de certificación modular", wide:true, body:`<div class="paper">${paperHead()}<h2>CONSTANCIA DE CERTIFICACIÓN MODULAR</h2>
@@ -1056,7 +1080,7 @@ function docCert(e){
     foot:`<button type="button" class="btn" data-act="pdfCert" data-id="${e.id}">Descargar PDF</button>`});
 }
 function pdfCert(id){
-  if(!libsOk("pdf")) return; const e = est(id), d = emitDoc("cert", e.id, e.nom), cs = DB.certs.filter(c => c.est === e.id); if(!d)return;
+  if(!libsOk("pdf")) return; const e = est(id), d = emitDoc("cert", e.id, e.nom), cs = DB.certs.filter(c => c.est === e.id && c.estadoDoc!=="Anulado"); if(!d)return;
   const doc = pdfNew(); let y = pdfHeader(doc, "CONSTANCIA DE CERTIFICACIÓN MODULAR");
   doc.setFontSize(10.5); doc.setTextColor(30); doc.setFont("helvetica","normal");
   const t = doc.splitTextToSize(`La Secretaría Académica del ${DB.cfg.nombre} hace constar que ${e.nom}, identificado(a) con DNI N.º ${e.dni}, estudiante del programa de estudios ${prog(e.prog).nombre}, registra las siguientes certificaciones modulares:`, 182);
@@ -1069,13 +1093,12 @@ function pdfCert(id){
 }
 V.certificados = () => {
   const L = lvl("certificados"), r = R();
-  const intro = head("1.2 · Gestión académica","Constancias y certificados","Registro progresivo de estudiantes, módulos formativos, certificaciones modulares e historial académico, con consulta por DNI o nombres y constancias verificables.");
+  const intro = head("1.2 · Gestión académica","Certificación modular","Registro de certificaciones e historial académico con maestros compartidos y documentos verificables.");
   if(L >= 2){
-    const T = tabs("certificados", [["consulta","Consulta"],["certs","Certificaciones", DB.certs.length],["modulos","Módulos formativos"],["notas","Historial académico"],["reportes","Reportes"]]);
+    const T = tabs("certificados", [["consulta","Consulta"],["certs","Certificaciones", DB.certs.length],["notas","Historial académico"],["reportes","Reportes"]]);
     let body = "";
     if(T.cur === "consulta") body = consultaCert(false);
     if(T.cur === "certs") body = crud("certs", {addLabel:"Registrar certificación", sub:`Los estudiantes se toman del <a href="#/admin/ix-alumnos">Maestro de alumnos</a>.`});
-    if(T.cur === "modulos") body = crud("modulos");
     if(T.cur === "notas") body = crud("notas", {addLabel:"Registrar nota"});
     if(T.cur === "reportes"){
       const year = today().slice(0,4);
@@ -1112,6 +1135,7 @@ function fichaTitulo(t, pub){
   <div class="btnrow"><button class="btn sm" data-act="docTit" data-id="${t.id}">Reporte de validación</button></div></section>`;
 }
 function docTit(id){
+  if(byId(DB.titulos,id)?.estadoDoc==="Anulado"){toast("El título está anulado.");return;}
   const t = byId(DB.titulos,id), e = est(t.est), d = emitDoc("titulo", t.id, e.nom); if(!d)return;
   openModal({title:"Reporte de validación de título", wide:true, body:`<div class="paper">${paperHead()}<h2>REPORTE DE VALIDACIÓN DE TÍTULO</h2>
     <p>El ${esc(DB.cfg.nombre)} certifica que la persona indicada cuenta con registro de título emitido por la institución:</p>
@@ -1119,6 +1143,7 @@ function docTit(id){
     foot:`<button type="button" class="btn" data-act="pdfTit" data-id="${t.id}">Descargar PDF</button>`});
 }
 function pdfTit(id){
+  if(byId(DB.titulos,id)?.estadoDoc==="Anulado"){toast("El título está anulado.");return;}
   if(!libsOk("pdf")) return; const t = byId(DB.titulos,id), e = est(t.est), d = emitDoc("titulo", t.id, e.nom); if(!d)return;
   const doc = pdfNew(); let y = pdfHeader(doc, "REPORTE DE VALIDACIÓN DE TÍTULO");
   doc.setFontSize(10.5); doc.setTextColor(30); doc.setFont("helvetica","normal");
@@ -1187,7 +1212,7 @@ function docRec(id){
 }
 function pdfRec(id){
   if(!libsOk("pdf")) return; const x = byId(DB.reclamos,id), d = emitDoc("reclamo", x.id, x.nom); if(!d)return;
-  const doc = pdfNew(); let y = pdfHeader(doc, `HOJA DE RECLAMACIÓN N.º ${x.num}`, `${x.tipo} registrado el ${fd(x.fecha)}`);
+  const doc = pdfNew(); let y = pdfHeader(doc, `HOJA DE RECLAMACIÓN N.º ${x.num}`, `${x.tipo} ${x.tipo === "Queja" ? "registrada" : "registrado"} el ${fd(x.fecha)}`);
   y = pdfKV(doc, y + 2, [["Usuario",x.nom],["DNI",x.dni],["Domicilio",x.dom||"—"],["Contacto",`${x.tel} · ${x.correo}`],["Área relacionada",areaN(x.area)],["Fecha del hecho",fd(x.hecho)],["Descripción",x.desc],["Pedido",x.pedido],["Estado",x.estado],...(x.respuesta ? [["Respuesta",`${x.respuesta} (${fd(x.fresp)})`]] : [["Plazo de respuesta",fd(plazoRec(x).due)]])]);
   pdfVerify(doc, d, y + 6); pdfFooter(doc); saveFile(`hoja_reclamacion_${x.num}.pdf`, doc.output("blob"));
 }
@@ -1413,6 +1438,7 @@ function registroEmpresa(){
   <div class="alert info" style="margin:10px 0"><b>Criterios de validación</b><ul style="margin:6px 0 0;padding-left:18px">${crit.criterios.map(c => `<li>${esc(c)}</li>`).join("")}</ul><span class="note">Responsable de la aprobación: ${esc(crit.responsable)}${crit.correo ? ` · ${esc(crit.correo)}` : ""}</span></div>
   <form class="f" data-form="regEmp" novalidate>${EMP_REG_FIELDS().map(f => fieldHtml(f,"")).join("")}${fieldHtml({k:"pass",l:"Contraseña para la intranet",t:"password",req:true,pat:[/^.{12,}$/,"Mínimo 12 caracteres."]},"")}
   <div class="fld wide"><label style="display:flex;gap:8px;align-items:flex-start;font-weight:400"><input type="checkbox" id="empDecl"> <span>Declaro bajo juramento que la empresa se encuentra con RUC <b>activo y habido</b>, que los datos registrados son verídicos y que las ofertas que publique cumplirán la normativa laboral vigente.</span></label><span class="err" id="empDeclErr"></span></div>
+  <div class="fld wide mpv-progress" data-company-progress role="status" hidden><span class="mpv-spinner" aria-hidden="true"></span><span>Registrando empresa, espera un momento. No cierres la página ni repitas el envío.</span></div>
   <div class="fld"><button class="btn" type="submit">Crear cuenta de empresa</button></div></form></section>`;
 }
 const rucValido = r => { r = String(r || ""); if(!/^(10|15|17|20)\d{9}$/.test(r)) return false; const w = [5,4,3,2,7,6,5,4,3,2]; const s = w.reduce((a, x, i) => a + x * +r[i], 0); let d = 11 - s % 11; if(d === 10) d = 0; if(d === 11) d = 1; return d === +r[10] };
@@ -1546,10 +1572,13 @@ V.bitacora = () => {
 
 /* ---------- configuración ---------- */
 V.config = () => {
-  const T = tabs("config", [["periodo","Periodo académico"],["documentos","Constancias y reportes"]]);
-  const intro = head("Configuración","Configuración académica","Periodo académico vigente y formato de las constancias, horarios y reportes que emite el sistema.") + T.html;
+  const T = tabs("config", [...(HOST.programsView ? [["programas","Programas de estudios"]] : []),["modulos","Módulos formativos"],["uds","Unidades didácticas"],["docentes","Asignaciones docentes"],["ambientes","Ambientes"],["bloques","Turnos, bloques y recesos"],["periodo","Periodo académico"],["documentos","Formatos documentales"]]);
+  const intro = head("Configuración compartida","Configuración académica general","Programas → Módulos formativos → Unidades didácticas. Horarios y los módulos documentales utilizan estos maestros únicos.") + T.html;
+  if(T.cur === "programas" && HOST.programsView) return intro + HOST.programsView();
+  if(["modulos","uds","docentes","ambientes"].includes(T.cur)) return intro + crud(T.cur);
+  if(T.cur === "bloques") return intro + bloquesView();
   if(T.cur === "documentos") return intro + docsConfig();
-  return intro + `<section class="panel"><h2>Periodo académico vigente</h2><p class="note">Los datos institucionales (nombre, dirección, director) se toman de la Configuración del portal.</p><form class="f" data-form="cfg" novalidate>${fieldHtml({k:"periodo",l:"Periodo académico vigente",req:true,pat:PAT_PER,hint:"Los horarios se programan y validan sobre este periodo."}, DB.cfg.periodo)}<div class="fld"><button class="btn" type="submit">Guardar</button></div></form></section>`;
+  return intro + `<section class="panel"><h2>Periodo académico vigente</h2><form class="f" data-form="cfg" novalidate>${fieldHtml({k:"periodo",l:"Periodo académico vigente",req:true,pat:PAT_PER}, DB.cfg.periodo)}<div class="fld"><button class="btn" type="submit">Guardar</button></div></form></section>`;
 };
 
 function apariencia(){
@@ -1609,7 +1638,7 @@ function applyBloques(t, nc){
   DB.cfg.bloques = Object.assign({}, DB.cfg.bloques || {}, {[t]: nc}); rebuildSlots(); return null;
 }
 function setBloq(t, patch, msg){
-  if(lvl("horarios") < 2) return;
+  if(lvl("config") < 2) return;
   const nc = normBloq(Object.assign(bloqCfg(t), patch)), e = bloqErr(t, nc);
   if(e){ toast(e); render(); return }
   const lost = applyBloques(t, nc);
@@ -1730,7 +1759,7 @@ function logout(){ HOST.logout() }
 const ACTIONS = {
   mkAcc(id){ if(lvl("alumnos") < 2) return; const e = byId(DB.estudiantes, +id); if(!e) return; const r = HOST.createStudentAccount({id:e.id, dni:e.dni, nom:e.nom, estado:e.estado, correo:e.correo || ""});
     if(r.error) return toast(r.error); log("Crear acceso","Maestro de alumnos",`${e.dni} ${e.nom}`); render();
-    openModal({title:"Acceso creado", body:`<p>Se creó la cuenta de <b>${esc(e.nom)}</b> como <b>${esc(r.rolLabel)}</b>.</p><dl class="dl"><dt>Usuario</dt><dd class="mono">${esc(r.usuario)}</dd><dt>Contraseña temporal</dt><dd class="mono" style="font-size:1.1rem">${esc(r.pass)}</dd></dl><p class="note">Entréguela al alumno. Ingresa en “Ingresar a la intranet” y verá su ficha, horario, certificaciones, bolsa laboral y trámites.</p>`}) },
+    openModal({title:"Acceso creado", body:`<p>Se creó la cuenta de <b>${esc(e.nom)}</b> como <b>${esc(r.rolLabel)}</b>.</p><dl class="dl"><dt>Usuario</dt><dd class="mono">${esc(r.usuario)}</dd><dt>Contraseña temporal</dt><dd class="mono" style="font-size:1.1rem">${esc(r.pass)}</dd></dl><p class="note">Entréguela al alumno: es temporal y deberá cambiarla en su primer ingreso. Luego verá su ficha, horario, certificaciones, bolsa laboral y trámites.</p>`}) },
   uRol(id){ S.ui.uRol = id; render() },
   uClear(){ S.ui.uRol = ""; S.ui.uEst = ""; S.q.usuarios = ""; render() },
   uVerRol(id){ S.ui.uRolSel = id; S.tab.usuarios = "permisos"; render(); window.scrollTo(0,0) },
@@ -1746,7 +1775,7 @@ const ACTIONS = {
     y = pdfKV(doc, y + 4, [["Titulado(a)","Nombre de ejemplo"],["DNI","00000000"],["Programa de estudios",(DB.programas[0]||{}).nombre || "—"]]);
     y = pdfTable(doc, y + 4, ["Columna 1","Columna 2","Columna 3"], [["Dato","Dato","Dato"],["Dato","Dato","Dato"]]);
     pdfVerify(doc, d, y + 10); pdfFooter(doc); saveFile(`documento_ejemplo_${fileStamp()}.pdf`, doc.output("blob")) },
-  bloqReset(){ confirmBox("Volver al horario original","Mañana: de 08:00 a 14:15 con receso de 11:00 a 11:15. Tarde: de 14:30 a 19:45 con receso de 17:30 a 17:45. Las clases programadas se moverán a esas horas.","Volver al original",() => { const old = JSON.parse(JSON.stringify(DB.cfg.bloques || {})); const sv = DB.sesiones.map(x => [x.ini, x.fin]); const lost = ["Tarde","Mañana"].map(t => applyBloques(t, BLOQ_DEF[t])).filter(Boolean); if(lost.length){ DB.sesiones.forEach((x,i) => { x.ini = sv[i][0]; x.fin = sv[i][1] }); DB.cfg.bloques = old; rebuildSlots(); toast("Hay clases en horas que no existen en el horario original. Muévalas primero."); return } DB.cfg.bloques = {}; rebuildSlots(); log("Configurar horario","Horarios","Horario original restablecido"); if(!save())return false; toast("Se restableció el horario original."); render() }) },
+  bloqReset(){ if(lvl("config")<2)return;confirmBox("Volver al horario original","Mañana: de 08:00 a 14:15 con receso de 11:00 a 11:15. Tarde: de 14:30 a 19:45 con receso de 17:30 a 17:45. Las clases programadas se moverán a esas horas.","Volver al original",() => { const old = JSON.parse(JSON.stringify(DB.cfg.bloques || {})); const sv = DB.sesiones.map(x => [x.ini, x.fin]); const lost = ["Tarde","Mañana"].map(t => applyBloques(t, BLOQ_DEF[t])).filter(Boolean); if(lost.length){ DB.sesiones.forEach((x,i) => { x.ini = sv[i][0]; x.fin = sv[i][1] }); DB.cfg.bloques = old; rebuildSlots(); toast("Hay clases en horas que no existen en el horario original. Muévalas primero."); return } DB.cfg.bloques = {}; rebuildSlots(); log("Configurar horario","Horarios","Horario original restablecido"); if(!save())return false; toast("Se restableció el horario original."); render() }) },
   bqAddRec(id){ const [t,h] = id.split("|"); const c = bloqCfg(t); setBloq(t, {recs:[...c.recs, {after:+h, min:15}]}, `receso de 15 min después de la ${h}.ª hora`) },
   bqDelRec(id){ const [t,h] = id.split("|"); const c = bloqCfg(t); setBloq(t, {recs:c.recs.filter(r => r.after !== +h)}, `se quitó el receso después de la ${h}.ª hora`) },
   bqAddHora(t){ const c = bloqCfg(t); if(c.n >= 10) return toast("Máximo 10 horas de clase por turno."); setBloq(t, {n:c.n + 1}, `${c.n + 1} horas de clase`) },
@@ -1903,21 +1932,25 @@ const FORMS = {
     HOST.exps().unshift(x); notify("r:adm",`Expediente ${x.num} recibido: ${tram(x.tramite).nombre}`,"mesa"); notify("r:admin",`Expediente ${x.num} recibido`,"mesa");
     log("Registrar","Mesa de partes",x.num); if(!save())return false; render(); docCargo(x.id); toast(`Documento recibido: ${x.num}. Guarde su código de seguimiento.`);
   },
-  regEmp(form){
+  async regEmp(form){
+    if(form.dataset.sending)return;
     const fields=[...EMP_REG_FIELDS(),{k:"pass",req:true,pat:[/^.{12,}$/,"Mínimo 12 caracteres."]}];
     const {vals,errs}=readFields(fields,form);
     if(vals.ruc&&!errs.ruc&&!rucValido(vals.ruc))errs.ruc="El RUC no es válido.";
     const decl=form.querySelector("#empDecl");if(!decl?.checked)errs.ruc="Debes aceptar la declaración jurada.";
     if(!showErrs(form,errs))return;
-    try{const result=HOST.registerCompany({...vals,declaration:decl.checked});DB.empresas.push(result.company);render();
+    form.dataset.sending='true';const controls=[...form.elements,...document.querySelectorAll('.pz-mt [data-tab]')].map(el=>[el,el.disabled]);controls.forEach(([el])=>el.disabled=true);const progress=form.querySelector('[data-company-progress]');if(progress)progress.hidden=false;const button=form.querySelector('[type=submit]');const original=button?.textContent;if(button){button.disabled=true;button.textContent='Registrando empresa, espera un momento…';}
+    const preventLeave=event=>{event.preventDefault();event.returnValue='';};window.addEventListener('beforeunload',preventLeave);portalSubmissionStatus('Registrando empresa. Espera un momento y no cierres la página.');
+    try{const result=await HOST.registerCompany({...vals,declaration:decl.checked});DB.empresas.push(result.company);render();portalSubmissionStatus('Empresa registrada correctamente.');
       openModal({title:"Empresa registrada",body:`<div class="alert ok">${esc(result.company.nom)} quedó pendiente de validación institucional.</div><p>Tu usuario es <b>${esc(result.username)}</b>. Entra con la contraseña que acabas de elegir.</p>`,foot:'<a class="btn" href="#/admin">Ingresar a la intranet</a>'});
-    }catch(error){toast(error.message);}
+    }catch(error){toast(error.message);portalSubmissionStatus(error.message);}finally{window.removeEventListener('beforeunload',preventLeave);delete form.dataset.sending;controls.forEach(([el,disabled])=>el.disabled=disabled);if(progress)progress.hidden=true;if(button)button.textContent=original;}
   },
   empSelf(form){
     const e = myEmp(), fields = ENT.empresas.fields().filter(f => f.k !== "validada" && f.k !== "ruc"), {vals, errs} = readFields(fields, form);
     if(!showErrs(form, errs)) return; Object.assign(e, vals); S.user.nom = e.nom; log("Editar","Bolsa laboral",`Empresa ${e.nom}`); if(!save())return false; toast("Datos de la empresa actualizados."); render();
   },
   cfg(form){
+    if(lvl("config")<2)return;
     const fields = [{k:"periodo",req:true,pat:PAT_PER}];
     const {vals, errs} = readFields(fields, form); if(!showErrs(form, errs)) return;
     const chg = vals.periodo !== DB.cfg.periodo; Object.assign(DB.cfg, vals); log("Editar","Configuración","Datos institucionales"); if(!save())return false;

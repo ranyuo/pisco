@@ -113,6 +113,8 @@ final class PortalBackups
                 $columns=array_keys($row);$db->prepare('INSERT INTO '.$table.' (`'.implode('`,`',$columns).'`) VALUES ('.implode(',',array_fill(0,count($columns),'?')).')')->execute(array_values($row));$counts[$table]++;
             }
             if(!$ended||$counts['pisco_state']!==1||(int)$db->query("SELECT COUNT(*) FROM pisco_users WHERE role='admin' AND active=1")->fetchColumn()<1)throw new PortalError(422,'Falta el final del respaldo o una cuenta administradora activa.');
+            // La cola no se restaura: evita entregar avisos pendientes de la instalación reemplazada.
+            $db->exec('DELETE FROM pisco_mail');
             if((int)$db->query('SELECT COUNT(*) FROM pisco_files WHERE sha256<>SHA2(contents,256) OR size<>OCTET_LENGTH(contents)')->fetchColumn())throw new PortalError(422,'Los archivos del respaldo no coinciden con sus hashes.');
             $db->prepare("INSERT INTO pisco_settings (setting_key,setting_value) VALUES ('role_permissions',?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)")->execute([json_encode($roles,JSON_THROW_ON_ERROR)]);
             PortalAudit::write($app,'Restaurar respaldo','Respaldos','',['fecha_copia'=>$header['created_at'],'registros'=>$counts],$actor);

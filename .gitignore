@@ -8,3 +8,5 @@
 /tests/.results/
 /public_html/assets/cache/*
 !/public_html/assets/cache/.htaccess
+/portal-private/.smtp-settings.json
+/portal-private/.smtp-*

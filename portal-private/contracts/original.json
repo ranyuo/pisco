@@ -78,7 +78,8 @@
         "ix-horarios",
         "ix-certificados",
         "ix-titulos",
-        "cvdocente"
+        "cvdocente",
+        "ix-config"
       ],
       "publish": true,
       "viewDni": true
@@ -90,7 +91,8 @@
         "programas",
         "egresados",
         "ix-alumnos",
-        "ix-horarios"
+        "ix-horarios",
+        "ix-config"
       ],
       "publish": true,
       "ownProgram": true
@@ -131,7 +133,8 @@
         "ix-horarios",
         "ix-certificados",
         "ix-titulos",
-        "ix-bolsa"
+        "ix-bolsa",
+        "ix-config"
       ],
       "publish": false,
       "viewDni": true
@@ -292,6 +295,34 @@
         },
         {
           "name": "imagen",
+          "type": "image",
+          "required": false,
+          "publishRequired": false,
+          "unique": false
+        },
+        {
+          "name": "foto2",
+          "type": "image",
+          "required": false,
+          "publishRequired": false,
+          "unique": false
+        },
+        {
+          "name": "foto3",
+          "type": "image",
+          "required": false,
+          "publishRequired": false,
+          "unique": false
+        },
+        {
+          "name": "foto4",
+          "type": "image",
+          "required": false,
+          "publishRequired": false,
+          "unique": false
+        },
+        {
+          "name": "foto5",
           "type": "image",
           "required": false,
           "publishRequired": false,

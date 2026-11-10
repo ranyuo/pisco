@@ -10,6 +10,9 @@ const portalPasswords=new Map();
 const portalProofs=Object.create(null);
 const portalSent=new WeakMap();
 const portalKnown=new Set(['mensajes','reclamos','expedientes','suscriptores'].flatMap(t=>(portalBootstrap.data[t]||[]).map(r=>t+':'+r.id)));
+// Región fuera de los formularios aria-busy para anunciar el progreso sin esperar al final.
+const portalSubmissionAnnouncer=document.createElement('div');portalSubmissionAnnouncer.className='portal-submission-announcer';portalSubmissionAnnouncer.setAttribute('role','status');portalSubmissionAnnouncer.setAttribute('aria-live','polite');portalSubmissionAnnouncer.setAttribute('aria-atomic','true');document.body.append(portalSubmissionAnnouncer);
+function portalSubmissionStatus(message){portalSubmissionAnnouncer.textContent=message;}
 function portalRequest(method,url,body) {
   const xhr=new XMLHttpRequest(); xhr.open(method,portalURL(url),false);
   xhr.setRequestHeader('Content-Type','application/json');xhr.setRequestHeader('Accept','application/json');xhr.setRequestHeader('X-CSRF-TOKEN',portalBootstrap.csrf);
@@ -17,6 +20,24 @@ function portalRequest(method,url,body) {
   if(xhr.status<200||xhr.status>=300)throw new Error(result.message||(xhr.status===409?'Otra persona guardó cambios. Copia tu trabajo y recarga la página.':'No se pudo conectar con el servidor.'));
   return result;
 }
+// El registro público no debe bloquear el navegador mientras carga archivos o espera SMTP.
+async function portalSubmitService(type,record,key){
+  let response,result;
+  try{
+    response=await fetch(portalURL('/api/solicitudes/'+type),{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json','X-CSRF-TOKEN':portalBootstrap.csrf},body:JSON.stringify({record,idempotency_key:key,proof:portalProofs[type]})});
+    result=await response.json();
+  }catch{throw new Error('No se pudo confirmar la respuesta del servidor. Conserva los datos y vuelve a intentar el mismo envío para recuperar tu cargo.');}
+  if(!response.ok)throw new Error(result.message||'No se pudo registrar el trámite. Revisa los datos e inténtalo nuevamente.');
+  if(!result.record?.id||!(result.record?.numero||result.record?.codigo))throw new Error('La respuesta no incluyó el cargo. Conserva los datos y vuelve a intentar el mismo envío.');
+  Object.assign(record,result.record);Object.defineProperty(record,'__serverSaved',{value:true,configurable:true});
+  portalKnown.add(type+':'+record.id);
+  const existing=DB[type].find(r=>r.id===record.id);if(existing)Object.assign(existing,result.record);else DB[type].unshift(record);
+  if(!portalBaseline[type].some(r=>r.id===record.id))portalBaseline[type].unshift(structuredClone(result.record));
+  RATE[type==='expedientes'?'mpv':'lr2']=Date.now();
+  if(currentUser()){portalRevision=result.revision;if(result.counters){DB.config.contadores=structuredClone(result.counters);portalBaseline.config.contadores=structuredClone(result.counters);}}
+  return result.record;
+}
+function portalSubmitExpediente(record,key){return portalSubmitService('expedientes',record,key);}
 function portalMerge(target,source) {
   for(const key of Object.keys(target))if(!(key in source))delete target[key];
   for(const [key,value] of Object.entries(source)){
@@ -34,7 +55,9 @@ function portalMerge(target,source) {
 }
 function portalLookup(type,reference,document,mode='codigo'){
   try{
-    const result=portalRequest('POST','/api/consultas/'+type,{reference,document,mode});
+    // La búsqueda de certificados por DNI exige la verificación anti-spam resuelta en el formulario.
+    const proof=type==='certificados'&&mode!=='codigo'?portalProofs.certificados:undefined;
+    const result=portalRequest('POST','/api/consultas/'+type,{reference,document,mode,...(proof?{proof}:{})});
     const records=result.records||[result.record];
     if(mode==='dni')for(const record of records)if(record)record.dni=reference;
     // Una consulta pública no reemplaza registros completos de una sesión administrativa por proyecciones sin adjuntos o datos privados.
@@ -61,7 +84,7 @@ function portalNormalizeAutomaticChanges(){
   if(!DB.academico||!portalBaseline.academico||currentUser()?.rol==='admin')return;
   const role=currentUser().rol;
   const academicRole=IX_ROLE[role];const permissions=portalBaseline.academico.perms[academicRole]||{};
-  const modules={estudiantes:'alumnos',sesiones:'horarios',publicados:'horarios',certs:'certificados',notas:'certificados',titulos:'titulos',empresas:'bolsa',ofertas:'bolsa',postulaciones:'bolsa',perfilesLab:'bolsa',perfilesDoc:'docentes',uds:'config',ambientes:'config',modulos:'config',areas:'mesa',tramites:'mesa',cfg:'config',perms:'usuarios',docs:'certificados',seq:'certificados'};
+  const modules={estudiantes:'alumnos',sesiones:'horarios',publicados:'horarios',certs:'certificados',notas:'certificados',titulos:'titulos',empresas:'bolsa',ofertas:'bolsa',postulaciones:'bolsa',perfilesLab:'bolsa',perfilesDoc:'docentes',uds:'config',docentes:'config',ambientes:'config',modulos:'config',areas:'mesa',tramites:'mesa',cfg:'config',perms:'usuarios',docs:'certificados',seq:'certificados'};
   const own=role==='docente'?['perfilesDoc']:['estudiante','egresado'].includes(role)?['estudiantes','perfilesLab','postulaciones','docs']:role==='empresa'?['empresas','ofertas','postulaciones']:[];
   // Catálogos que solo cambian por formulario: si el rol no tiene permiso, se avisa en vez de descartar en silencio.
   const denied=[];const CATALOGS={uds:'unidades didácticas',ambientes:'ambientes',modulos:'módulos formativos',areas:'áreas receptoras',tramites:'tipos de trámite'};
@@ -69,13 +92,13 @@ function portalNormalizeAutomaticChanges(){
   if(denied.length)throw new Error('Tu rol no tiene permiso para modificar: '+denied.join(', ')+'. No se guardó el cambio.');
   if(role!=='secretaria')DB.personas=portalBaseline.personas.map(person=>role==='docente'&&person.id===currentUser().personaId?(DB.personas.find(p=>p.id===person.id)||person):structuredClone(person));
   // Los catálogos sincronizados son de lectura; las ediciones autorizadas se realizan en sus módulos.
-  for(const key of ['programas','docentes','progMap'])DB.academico[key]=structuredClone(portalBaseline.academico[key]);
+  for(const key of ['programas','progMap'])DB.academico[key]=structuredClone(portalBaseline.academico[key]);
   if(!['admin','secretaria'].includes(currentUser()?.rol))DB.certificados=structuredClone(portalBaseline.certificados);
   for(const key of ['nombre','siglas','director','direccion','web'])DB.academico.cfg[key]=portalBaseline.academico.cfg[key];
 }
 function portalPatch(before,after){
  const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);const result=[];
- const key=(path,row)=>row&&row.id!==undefined?'id:'+row.id:path.endsWith('perfilesLab')?'est:'+row.est:path.endsWith('perfilesDoc')?'doc:'+row.doc:path.endsWith('estadisticas')?(row.anio||'')+'|'+(row.programaId||''):null;
+ const key=(path,row)=>row&&row.id!==undefined?'id:'+row.id:path==='academico.docs'?'cod:'+row.cod:path.endsWith('perfilesLab')?'est:'+row.est:path.endsWith('perfilesDoc')?'doc:'+row.doc:path.endsWith('estadisticas')?(row.anio||'')+'|'+(row.programaId||''):null;
  const add=(path,a,b)=>{if(same(a,b))return;const name=path.join('.');
   if(Array.isArray(a)&&Array.isArray(b)&&[...a,...b].every(r=>r&&typeof r==='object'&&key(name,r)!==null)){
     const old=new Map(a.map(r=>[key(name,r),r])),next=new Map(b.map(r=>[key(name,r),r]));const changes=[];
@@ -97,7 +120,7 @@ saveDB=function(){
         Object.assign(record,result.record);Object.defineProperty(record,'__serverSaved',{value:true});portalKnown.add(type+':'+record.id);portalBaseline[type].unshift(structuredClone(result.record));if(currentUser()){portalRevision=result.revision;if(result.counters){DB.config.contadores=structuredClone(result.counters);portalBaseline.config.contadores=structuredClone(result.counters);}}
       }
     }
-    if(!currentUser()||!location.hash.startsWith('#/admin'))return true;
+    if(!currentUser()||(!location.hash.startsWith('#/admin')&&!(typeof window.PORTAL_EMPLOYMENT_CONTEXT==='function'&&window.PORTAL_EMPLOYMENT_CONTEXT())))return true;
     portalNormalizeAutomaticChanges();
     const accounts=portalAccountOperations();
     if(!accounts.length&&JSON.stringify(DB)===JSON.stringify(portalBaseline))return true;
@@ -132,7 +155,11 @@ const portalOriginalAdmin=renderAdmin;
 renderAdmin=function(parts,query){if(currentUser()?.rol==='admin'&&parts[1]==='respaldo')return {html:admHead('Respaldos y restauración','Crea, restaura y programa copias completas de contenido, cuentas y archivos.','','download')+`<section class="panel"><div class="pb"><a class="btn" href="/respaldos.php">Administrar respaldos y restauración</a><p>Las copias se guardan en la carpeta privada del portal.</p></div></section>`};if(currentUser()&&parts[1]==='perfil'){location.href='/accounts.php';return {html:''};}const out=portalOriginalAdmin(parts,query);if(currentUser()?.rol==='admin'&&parts[1]==='auditoria')out.html=`<p><a class="btn" href="/auditoria.php">Consultar y exportar el historial completo</a></p>`+out.html;return out;};
 IXHOST.createStudentAccount=function(student){try{const result=portalRequest('POST','/api/cuentas',{action:'student',student_id:student.id});DB.usuarios.push(result.user);portalBaseline.usuarios=structuredClone(DB.usuarios);return {usuario:result.user.usuario,pass:result.temporary_password,rolLabel:ROLES[result.user.rol].label};}catch(error){return {error:error.message};}};
 IXHOST.defaultPermissions=function(){return portalBootstrap.data.academico.perms;};
-IXHOST.registerCompany=function(values){return portalRequest('POST','/api/empresas',{...values,password:values.pass});};
+IXHOST.registerCompany=async function(values){
+ let response,result;try{response=await fetch(portalURL('/api/empresas'),{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json','X-CSRF-TOKEN':portalBootstrap.csrf},body:JSON.stringify({...values,password:values.pass})});result=await response.json();}
+ catch{throw new Error('No se pudo confirmar la respuesta. Si la empresa ya quedó registrada, ingresa con su RUC y la contraseña elegida; no crees otra cuenta.');}
+ if(!response.ok)throw new Error(result.message||'No se pudo registrar la empresa.');return result;
+};
 async function portalUpload(file){
   const body=new FormData();body.append('file',file);if(!currentUser()){const purpose=document.querySelector('#cap-mpv,#cap-mp')?'expedientes':'reclamos';body.append('purpose',purpose);body.append('proof',JSON.stringify(portalProofs[purpose]||{}));}
   const response=await fetch(portalURL('/api/archivos'),{method:'POST',headers:{'Accept':'application/json','X-CSRF-TOKEN':portalBootstrap.csrf},body});let data;
@@ -175,6 +202,9 @@ document.addEventListener('submit',async event=>{
 },true);
 
 const portalDownloadBlob=downloadBlob;
+const portalAudit=audit;
+// El servidor descarta la auditoría enviada por el navegador; los accesos denegados se registran en pisco_audit.
+audit=function(accion,entidad,registro='',detalle=''){const result=portalAudit(accion,entidad,registro,detalle);if(accion==='Acceso denegado'&&currentUser())fetch(portalURL('/api/eventos'),{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-TOKEN':portalBootstrap.csrf},body:JSON.stringify({action:'Acceso denegado',entity:String(entidad||'').slice(0,250),route:String(registro||'').slice(0,250),reason:String(detalle||'').slice(0,250)})}).catch(()=>{});return result;};
 downloadBlob=function(blob,filename){if(currentUser())fetch(portalURL('/api/eventos'),{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-TOKEN':portalBootstrap.csrf},body:JSON.stringify({action:'Exportar',filename:String(filename||'archivo').slice(0,200),size:blob?.size||0})}).catch(()=>{});return portalDownloadBlob(blob,filename);};
 
 const portalProgramFields=SPECS.programas.fields;
