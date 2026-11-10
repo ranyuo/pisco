@@ -105,6 +105,15 @@
         "min": 1,
         "max": 8,
         "pattern": null
+      },
+      {
+        "name": "mod",
+        "type": "select",
+        "required": false,
+        "unique": false,
+        "min": null,
+        "max": null,
+        "pattern": null
       }
     ]
   },
@@ -255,6 +264,24 @@
         "min": null,
         "max": null,
         "pattern": null
+      },
+      {
+        "name": "horasTotal",
+        "type": "number",
+        "required": false,
+        "unique": false,
+        "min": 1,
+        "max": 10000,
+        "pattern": null
+      },
+      {
+        "name": "tipoHoras",
+        "type": "select",
+        "required": false,
+        "unique": false,
+        "min": null,
+        "max": null,
+        "pattern": null
       }
     ]
   },
@@ -391,6 +418,42 @@
         "min": null,
         "max": null,
         "pattern": null
+      },
+      {
+        "name": "institucion",
+        "type": "text",
+        "required": false,
+        "unique": false,
+        "min": null,
+        "max": null,
+        "pattern": null
+      },
+      {
+        "name": "estadoDoc",
+        "type": "text",
+        "required": false,
+        "unique": false,
+        "min": null,
+        "max": null,
+        "pattern": null
+      },
+      {
+        "name": "horasDoc",
+        "type": "number",
+        "required": false,
+        "unique": false,
+        "min": 1,
+        "max": 10000,
+        "pattern": null
+      },
+      {
+        "name": "tipoHoras",
+        "type": "text",
+        "required": false,
+        "unique": false,
+        "min": null,
+        "max": null,
+        "pattern": null
       }
     ]
   },
@@ -478,6 +541,60 @@
         "name": "resol",
         "type": "text",
         "required": true,
+        "unique": false,
+        "min": null,
+        "max": null,
+        "pattern": null
+      },
+      {
+        "name": "institucion",
+        "type": "text",
+        "required": false,
+        "unique": false,
+        "min": null,
+        "max": null,
+        "pattern": null
+      },
+      {
+        "name": "estadoDoc",
+        "type": "text",
+        "required": false,
+        "unique": false,
+        "min": null,
+        "max": null,
+        "pattern": null
+      },
+      {
+        "name": "denominacion",
+        "type": "text",
+        "required": false,
+        "unique": false,
+        "min": null,
+        "max": null,
+        "pattern": null
+      },
+      {
+        "name": "nivel",
+        "type": "text",
+        "required": false,
+        "unique": false,
+        "min": null,
+        "max": null,
+        "pattern": null
+      },
+      {
+        "name": "pais",
+        "type": "text",
+        "required": false,
+        "unique": false,
+        "min": null,
+        "max": null,
+        "pattern": null
+      },
+      {
+        "name": "region",
+        "type": "text",
+        "required": false,
         "unique": false,
         "min": null,
         "max": null,

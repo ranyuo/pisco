@@ -9,7 +9,9 @@ try {
     if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $app->checkCsrf(is_string($_POST['_csrf'] ?? null) ? $_POST['_csrf'] : '');
         if (($_POST['action'] ?? '') === 'password') {
+            $temporary=!empty($actor['cambiarClave']);
             $app->changePassword($_POST);
+            if($temporary){header('Location: /#/admin/dashboard', true, 303); exit;}
             $_SESSION['account_notice'] = 'Contraseña actualizada.';
         } else {
             $app->createAccount($_POST);

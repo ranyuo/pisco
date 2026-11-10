@@ -29,7 +29,10 @@ const slugify = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').to
 const normTitle = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 
 const maskDni = d => d ? '****' + String(d).slice(-4) : '';
-const stripTags = h => { const d = document.createElement('div'); d.innerHTML = h || ''; return d.textContent || ''; };
+// Documento inerte: un elemento del documento real cargaría imágenes y ejecutaría atributos como onerror.
+// Fecha local AAAA-MM-DD (toISOString usa UTC: en Perú cambiaría de día a las 19:00).
+const localYmd = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const stripTags = h => new DOMParser().parseFromString(String(h || ''), 'text/html').body.textContent || '';
 const clamp = (s, n) => { s = String(s || ''); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
 const yearNow = () => new Date().getFullYear();
 
@@ -197,12 +200,76 @@ function themeVars(t) {
   else { const sky = mix(t.blue, '#ffffff', .9); let link = t.blue; for (let k = 0; k < 10 && contrast(link, sky) < 4.6; k++) link = mix(link, '#000000', .1); Object.assign(v, { '--sky': sky, '--hc': t.navy, '--link': link, '--blue-rgb': hexRgb(t.blue).join(','), '--card2': mix(t.blue, '#ffffff', .975), '--bg': mix(t.blue, '#ffffff', .955), '--bg2': mix(t.blue, '#ffffff', .935), '--line': mix(t.navy, '#ffffff', .875), '--line2': mix(t.navy, '#ffffff', .77), '--info': t.blue, '--infobg': mix(t.blue, '#ffffff', .9), '--infoink': mix(t.navy, '#000000', .1) }); }
   return v;
 }
+/* Todas las estructuras toman sus colores de los 3 colores del portal (Institucional, Botones y enlaces, Destacado).
+   Lo guardado en «Opciones avanzadas» (DB.config.disenoColores) solo reemplaza el color indicado. */
+/* «Impacto» («impacto-flv» se migra a «impacto» en el servidor) */
+const IMP_KEYS = ['impacto', 'impacto-flv'];
+const IMP_CAMPOS = [['acento', 'Color de acento', 'Bloque del logotipo, recuadros, títulos destacados y detalles'], ['oscuro', 'Color oscuro', 'Franja de cifras, pie de página y banner de las páginas interiores'], ['boton', 'Botón «Postula»', 'Botón principal de la cabecera'], ['titulos', 'Títulos', 'Color de los títulos sobre fondo blanco']];
+const impDefaults = t => ({ acento: t.gold, oscuro: t.navy, boton: t.blue, titulos: t.navy });
+/* «Horizonte»: color principal, acento y fondo claro */
+const HOR_CAMPOS = [['primario', 'Color principal', 'Bloque del logotipo, franjas, títulos y pie de página'], ['acento', 'Color de acento', 'Botón «Postula», flechas, palabras destacadas y enlaces'], ['fondo', 'Fondo claro', 'Fondo de las secciones claras']];
+/* «Campus»: color principal, oscuro (botones y tarjetas) y pie */
+const CAM_CAMPOS = [['primario', 'Color principal', 'Barra superior, títulos, botones principales y franja del pie'], ['oscuro', 'Color oscuro', 'Pestaña activa, botones secundarios y tarjetas de «¿Por qué estudiar?»'], ['pie', 'Fondo de enlaces del pie', 'Bloque de enlaces sobre la franja de color']];
+/* Clásico, Moderno y Universitario */
+const BASE_CAMPOS = [['principal', 'Color principal', 'Cabecera, títulos, franjas y pie de página'], ['secundario', 'Color secundario', 'Botones, enlaces y elementos interactivos'], ['acento', 'Color de acento', 'Detalles, líneas, etiquetas y cifras destacadas']];
+const baseDef = t => ({ principal: t.navy, secundario: t.blue, acento: t.gold });
+/* diseños con colores configurables */
+const DCFG = {
+  'clasico': { campos: BASE_CAMPOS, def: baseDef },
+  'moderno': { campos: BASE_CAMPOS, def: baseDef },
+  'universitario': { campos: BASE_CAMPOS, def: baseDef },
+  'impacto': { campos: IMP_CAMPOS, def: impDefaults },
+  'campus': { campos: CAM_CAMPOS, def: t => ({ primario: t.navy, oscuro: mix(t.navy, '#000000', .55), pie: mix(t.navy, '#000000', .3) }) },
+  'horizonte': { campos: HOR_CAMPOS, def: t => ({ primario: t.navy, acento: t.gold, fondo: mix(t.blue, '#ffffff', .92) }) },
+};
+const dOn = bg => contrast('#ffffff', bg) >= contrast('#111111', bg) ? '#ffffff' : '#111111';
+const hexOk = (v, f) => /^#[0-9a-f]{6}$/i.test(String(v || '')) ? v : f;
+/* Colores del tema con valores de respaldo válidos */
+const themeSafe = t => Object.assign({}, t, { navy: hexOk(t && t.navy, '#0c2a5b'), navy2: hexOk(t && t.navy2, '#16449a'), blue: hexOk(t && t.blue, '#1e5fc8'), gold: hexOk(t && t.gold, '#f2b705') });
+/* Combinaciones para «Opciones avanzadas»: las mismas del paso 2, traducidas a los campos de cada estructura */
+const dPresets = cf => Object.values(DB.config.temas || {}).map(t => [t.label, cf.def(themeSafe(t))]);
+function impColors(key, t) { const cf = DCFG[key]; t = Object.assign({}, t, { navy: hexOk(t && t.navy, '#0c2a5b'), navy2: hexOk(t && t.navy2, '#16449a'), blue: hexOk(t && t.blue, '#1e5fc8'), gold: hexOk(t && t.gold, '#f2b705') }); const d = cf.def(t), c = ((DB.config.disenoColores || {})[key]) || {}; const o = {}; for (const [k] of cf.campos) o[k] = /^#[0-9a-f]{6}$/i.test(c[k] || '') ? c[k] : d[k]; return o; }
+function impApplyColors(t) {
+  let st = document.getElementById('imp-vars'); const key = DB.config.diseno;
+  if (!DCFG[key]) { if (st) st.textContent = ''; return; }
+  if (!st) { st = document.createElement('style'); st.id = 'imp-vars'; document.head.appendChild(st); }
+  const c = impColors(key, t); const on = dOn;
+  if (BASE_CAMPOS === DCFG[key].campos) {
+    const d = baseDef(t); if (c.principal === d.principal && c.secundario === d.secundario && c.acento === d.acento) { st.textContent = ''; return; }
+    const v = themeVars(Object.assign({}, t, { navy: c.principal, navy2: mix(c.principal, c.secundario, .35), blue: c.secundario, gold: c.acento }));
+    // Universitario calcula sus tonos a partir del tema: se recalculan con los colores elegidos.
+    if (key === 'universitario') Object.assign(v, { '--dk': 'color-mix(in srgb,var(--navy) 22%,#050608)', '--dk2': 'color-mix(in srgb,var(--navy) 62%,#050608)', '--ac': 'var(--gold)', '--ac2': 'var(--blue)' });
+    const sel = key === 'clasico' ? ':root:not([data-layout])' : `:root[data-layout="${key}"]`;
+    st.textContent = `${sel} body:not(.is-admin){${Object.entries(v).map(([k, x]) => `${k}:${x}`).join(';')}}`; return;
+  }
+  if (key === 'campus') { const txt = (() => { let x = c.primario; for (let k = 0; k < 14 && contrast(x, '#ffffff') < 4.5; k++) x = mix(x, '#000000', .08); return x; })();
+    st.textContent = `:root[data-layout="campus"] body:not(.is-admin){--kp:${c.primario};--kpo:${on(c.primario)};--kpd:${mix(c.primario, '#000000', .2)};--kpt:${txt};--kpl:${mix(c.primario, '#ffffff', .92)};--kk:${c.oscuro};--kko:${on(c.oscuro)};--kf:${c.pie};--kfo:${on(c.pie)}}`; return; }
+  if (key === 'horizonte') { st.textContent = `:root[data-layout="horizonte"] body:not(.is-admin){--hp:${c.primario};--hpo:${on(c.primario)};--hpd:${mix(c.primario, '#000000', .28)};--hpl:${mix(c.primario, '#ffffff', .55)};--ha:${c.acento};--hao:${on(c.acento)};--hat:${(() => { if (contrast(c.acento, '#ffffff') >= 4.5) return c.acento; if (contrast(c.acento, '#ffffff') >= 3.2) { let x = c.acento; for (let k = 0; k < 8 && contrast(x, '#ffffff') < 4.5; k++) x = mix(x, '#000000', .06); return x; } let x = mix(c.primario, '#2f7cf6', .55); for (let k = 0; k < 12 && contrast(x, '#ffffff') < 4.5; k++) x = mix(x, '#000000', .08); return x; })()};--hf:${c.fondo}}`; return; }
+  // Títulos en el color destacado sobre fondo claro: se oscurece lo justo para leerse (3:1, texto grande).
+  const iyt = (() => { let x = c.acento; for (let k = 0; k < 16 && contrast(x, '#ffffff') < 3; k++) x = mix(x, '#000000', .08); return x; })();
+  st.textContent = `:root[data-layout="impacto"] body:not(.is-admin){--iyt:${iyt};--iy:${c.acento};--ion:${on(c.acento)};--id:${c.oscuro};--icta:${c.boton};--icton:${on(c.boton)};--ik:${c.titulos}}`;
+}
+const DISENOS = [
+  ['clasico', 'Clásico institucional', 'Diseño original del portal: cabecera institucional, carrusel y bloques en tarjetas.'],
+  ['moderno', 'Moderno', 'Portada a pantalla completa, menú flotante con efecto vidrio, tarjetas amplias con esquinas redondeadas y sombras suaves.'],
+  ['editorial', 'Editorial', 'Estilo de revista digital: tipografía grande, líneas finas, fondo claro y la noticia principal destacada en grande.'],
+  ['impacto', 'Impacto', 'Alto contraste: logotipo en bloque del color destacado, portada a pantalla completa, títulos condensados en mayúsculas, mosaico de programas, recuadros de color y franja oscura de logros. El menú principal no cambia.'],
+  ['campus', 'Campus', 'Portal de universidad con barra superior de color, menú en mayúsculas sobre la portada, títulos centrados subrayados, tarjetas de programas en capas de color, botones flotantes «Postula», eventos y noticias en tarjetas y pie en dos bloques.'],
+  ['horizonte', 'Horizonte', 'Portal de universidad moderna: cabecera con logotipo en bloque de color, tarjeta translúcida sobre la portada, panel de oferta formativa, franjas de color con esquinas redondeadas y títulos en dos colores.'],
+  ['universitario', 'Universitario', 'Portal de estilo universitario: cabecera oscura con logotipo en bloque blanco, programas con íconos circulares, franjas oscuras y carruseles en paneles. El menú principal no cambia.'],
+];
 function applyTheme() {
   if (!DB || !DB.config) return; ensureThemes(); const t = DB.config.temas[DB.config.tema];
   const css = ':root:root{' + Object.entries(themeVars(t)).map(([k, x]) => `${k}:${x}`).join(';') + '}';
   let st = document.getElementById('theme-vars'); if (!st) { st = document.createElement('style'); st.id = 'theme-vars'; document.head.appendChild(st); }
   const key = JSON.stringify(t); if (st.dataset.k !== key) { st.textContent = css; st.dataset.k = key; Object.keys(IMG_CACHE || {}).forEach(k => delete IMG_CACHE[k]); }
   if (t.modo === 'oscuro') document.documentElement.dataset.mode = 'dark'; else delete document.documentElement.dataset.mode;
+  const lay = DB.config.diseno; if (DISENOS.some(d => d[0] === lay) && lay !== 'clasico') document.documentElement.dataset.layout = IMP_KEYS.includes(lay) ? 'impacto' : lay; else delete document.documentElement.dataset.layout;
+  impApplyColors(t);
+  // Impacto, Campus, Horizonte y Editorial no tienen versión oscura: con una combinación oscura, el sitio público usa sus tonos claros (el panel sigue oscuro).
+  let nd = document.getElementById('nodark-vars'); if (!nd) { nd = document.createElement('style'); nd.id = 'nodark-vars'; document.head.appendChild(nd); }
+  nd.textContent = t.modo === 'oscuro' ? NO_DARK.map(k => `:root[data-layout="${k}"] body:not(.is-admin)`).join(',') + '{' + Object.entries(Object.assign({}, LIGHT_NEUTRALS_ALL, themeVars(Object.assign({}, t, { modo: 'claro' })))).map(([k, x]) => `${k}:${x}`).join(';') + ';color-scheme:light;color:var(--ink);background:var(--page)}' : '';
+  if (IMP_KEYS.includes(lay) && !document.getElementById('font-impacto')) { const l = document.createElement('link'); l.id = 'font-impacto'; l.rel = 'stylesheet'; l.href = 'https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap'; document.head.appendChild(l); }
   TC = { navy: t.navy, navy2: t.navy2, blue: t.blue, gold: t.gold };
   const m = document.querySelector('meta[name="theme-color"]'); if (m) m.content = t.navy;
 }
@@ -366,14 +433,28 @@ function checkFile(file, kind) {
 const readAsDataURL = f => new Promise((ok, ko) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = ko; r.readAsDataURL(f); });
 const readAsText = f => new Promise((ok, ko) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = ko; r.readAsText(f); });
 /* Comprime y redimensiona imágenes antes de guardarlas (biblioteca de medios) */
-async function compressImage(file, maxW = 1400) {
-  const src = await readAsDataURL(file);
+async function compressImage(file, maxW = 1400, opts = {}) {
+  const q = opts.q || .8; const src = await readAsDataURL(file);
   const im = new Image(); im.src = src; await im.decode();
-  const sc = Math.min(1, maxW / im.width, maxW / im.height); const c = document.createElement('canvas');
-  c.width = Math.round(im.width * sc); c.height = Math.round(im.height * sc);
-  c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
-  let out = c.toDataURL('image/webp', .8); if (!out.startsWith('data:image/webp')) out = c.toDataURL('image/jpeg', .82);
+  compressImage.last = { w: im.naturalWidth, h: im.naturalHeight };
+  const sc = Math.min(1, maxW / im.width, maxW / im.height);
+  const W = Math.round(im.width * sc), H = Math.round(im.height * sc);
+  // Imagen grande ya liviana y del tamaño adecuado: se conserva tal cual (sin pérdida adicional).
+  if (opts.keep && sc === 1 && /^image\/(jpeg|webp)$/.test(file.type) && file.size <= opts.keep) return src;
+  // Reducción en pasos de 50 % con suavizado de alta calidad: evita el aspecto borroso o dentado.
+  let cur = im, cw = im.width, ch = im.height;
+  while (cw / 2 >= W * 1.05) { const t = document.createElement('canvas'); t.width = Math.round(cw / 2); t.height = Math.round(ch / 2); const x = t.getContext('2d'); x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high'; x.drawImage(cur, 0, 0, t.width, t.height); cur = t; cw = t.width; ch = t.height; }
+  const c = document.createElement('canvas'); c.width = W; c.height = H; const ctx = c.getContext('2d'); ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; ctx.drawImage(cur, 0, 0, W, H);
+  if (opts.sharpen && sc < 1) sharpenCanvas(c, opts.sharpen);
+  let out = c.toDataURL('image/webp', q); if (!out.startsWith('data:image/webp')) out = c.toDataURL('image/jpeg', Math.min(.95, q + .02));
   return out;
+}
+/* Enfoque suave (máscara de enfoque 3×3) para recuperar los bordes tras reducir la imagen */
+function sharpenCanvas(c, amt = .35) {
+  const ctx = c.getContext('2d'); const { width: w, height: h } = c; const src = ctx.getImageData(0, 0, w, h); const d = src.data; const o = new Uint8ClampedArray(d);
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) { const i = (y * w + x) * 4;
+    for (let k = 0; k < 3; k++) { const v = d[i + k], blur = (d[i - 4 + k] + d[i + 4 + k] + d[i - w * 4 + k] + d[i + w * 4 + k]) / 4; o[i + k] = v + (v - blur) * amt; } }
+  ctx.putImageData(new ImageData(o, w, h), 0, 0);
 }
 /* Nombre interno seguro para archivos subidos */
 const safeName = (orig, prefix = 'doc') => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}.${(orig.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '')}`;
@@ -476,6 +557,8 @@ const CAPTCHA_IO = 'IntersectionObserver' in window ? new IntersectionObserver(e
 function watchCaptchas() { $$('.captcha[data-purpose]:not([data-watch])').forEach(b => { b.dataset.watch = '1'; if (CAPTCHA_IO) CAPTCHA_IO.observe(b); else loadCaptcha(b); }); }
 new MutationObserver(() => watchCaptchas()).observe(document.documentElement, { childList: true, subtree: true });
 document.addEventListener('focusin', e => { const f = e.target.closest && e.target.closest('form'); if (f) loadCaptcha($('.captcha[data-purpose]', f)); }, true);
+// Tras un envío correcto la verificación queda usada: se pide una nueva para el siguiente envío sin recargar.
+function renewCaptcha(form) { const box = form && $('.captcha[data-purpose]', form); if (!box) return; delete box.dataset.challenge; delete box.dataset.loading; const inp = $('input:not([type=hidden])', box); if (inp) inp.value = ''; loadCaptcha(box); }
 function checkCaptcha(form, id) {
   if (form.website && form.website.value) return 'Envío bloqueado por el filtro anti-spam.';
   const box = $('#' + id, form);if(!box)return 'Recarga la página para verificar el formulario.';if(!box.dataset.challenge){loadCaptcha(box);return 'La verificación anti-spam aún se está cargando. Espera un momento e inténtalo de nuevo.';}
@@ -598,6 +681,7 @@ const publicTeacherVisible = p => !p?.cv?.autoriza?.revocado && (p?.cv?.autoriza
 const progs = () => sortO(P('programas').filter(isPub));
 const progById = id => P('programas').find(p => p.id === id);
 const safePortalLink = (value, internal = true) => { if (typeof value !== 'string' || !value) return false; if (internal && value.startsWith('#/')) return true; try { const url = new URL(value); return ['http:', 'https:'].includes(url.protocol); } catch { return false; } };
+const dreLabel = () => ((coll('enlaces').find(x => x.id === 'dre') || {}).nombre || 'DRE');
 const ext = id => { const e = coll('enlaces').find(x => x.id === id); return e && !e.deleted && e.estado === 'Activo' && safePortalLink(e.url, false) ? e.url : ''; };
 const linkAttrs = href => /^https?:/.test(href) ? `href="${esc(href)}" target="_blank" rel="noopener noreferrer"` : `href="${esc(href)}"`;
 const resolveLink = l => typeof l === 'string' && l.startsWith('ext:') ? ext(l.slice(4)) : safePortalLink(l) ? l : '';
@@ -607,6 +691,9 @@ const admVigente = () => P('admisiones').filter(a => (a.estado === 'Publicado' |
 const matVigente = () => P('matriculas').filter(a => (a.estado === 'Publicado' || a._preview) && a.vigente)[0];
 const becaVigente = () => P('becasPeriodos').find(b => b.vigente && b.estado !== 'Borrador');
 const inst = () => DB.config.inst;
+/* Texto junto al logotipo: el configurado o, si está vacío, el nombre corto oficial completo (sin abreviar), en tamaño reducido (clase b-long) para que no desborde la cabecera. */
+const brandLong = () => !String(inst().logoSigla || '').trim();
+const brandSigla = () => brandLong() ? inst().nombreCorto : String(inst().logoSigla).trim();
 const logoSrc = () => inst().logo || img('ph:logo:' + inst().logoSigla);
 const pubNews = () => P('noticias').filter(newsVisible).sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
 
@@ -634,6 +721,10 @@ function headerHTML(path) {
     if (m.href) return `<li><a class="top ${active}" href="${m.href}" ${active ? 'aria-current="page"' : ''}>${esc(m.label)}</a></li>`;
     return `<li><button class="top ${active}" aria-expanded="false" aria-controls="sub${idx}">${esc(m.label)} <span aria-hidden="true">▾</span></button><ul class="sub" id="sub${idx}">${m.items.map(it => `<li><a ${linkAttrs(it.href)} class="${it.ext ? 'ext' : ''}">${esc(it.label)}${it.ext ? '<span class="sr-only"> (enlace externo)</span>' : ''}</a></li>`).join('')}</ul></li>`;
   }).join('');
+  if (isUni()) return uniHeader(path, nav, cur);
+  if (isImp()) return impHeader(path, nav, cur);
+  if (isHor()) return horHeader(path, nav, cur);
+  if (isCam()) return camHeader(path, nav, cur);
   return `<a class="skip" href="#contenido" onclick="event.preventDefault();document.getElementById('contenido').focus()">Saltar al contenido principal</a>
   <div class="topbar"><div class="wrap"><span>${esc(i.slogan)}</span><div class="tb-links">
     <a href="mailto:${esc(i.correo)}" class="hide-sm">${ic('mail')} ${esc(i.correo)}</a><a href="tel:${esc(i.telefono.replace(/\D/g, ''))}">${ic('phone')} ${esc(i.telefono)}</a>
@@ -649,6 +740,10 @@ function headerHTML(path) {
   <form class="mobile-search" role="search" data-search><label class="sr-only" for="q2">Buscar</label><input class="inp" id="q2" name="q" placeholder="Buscar en el sitio..."><button class="btn gold sm">Buscar</button></form></div></nav>`;
 }
 function footerHTML() {
+  if (isUni()) return uniFooter();
+  if (isImp()) return impFooter();
+  if (isHor()) return horFooter();
+  if (isCam()) return camFooter();
   const i = inst(), r = DB.config.redes;
   const soc = ['facebook', 'youtube', 'instagram', 'tiktok'].filter(k => r[k]).map(k => `<a href="${esc(r[k])}" target="_blank" rel="noopener noreferrer" aria-label="${k} (se abre en una pestaña nueva)">${bic(k)}</a>`).join('');
   const ci = (icon, label, val) => `<li><span class="f-ic">${ic(icon)}</span><span><small>${label}</small>${val}</span></li>`;
@@ -659,16 +754,271 @@ function footerHTML() {
     <section class="f-col f-about"><a class="f-brand" href="#/"><img src="${logoSrc()}" alt=""><span><strong>${esc(i.nombreCorto)}</strong><small>${esc(i.nombre)}</small></span></a><p>${esc(i.descripcion)}</p>${soc ? `<div class="social f-social" aria-label="Redes sociales">${soc}</div>` : ''}</section>
     <nav class="f-col" aria-label="Enlaces del pie de página"><h2>Enlaces rápidos</h2><ul class="f-links">${links.map(([h, l]) => `<li><a href="${h}">${l}</a></li>`).join('')}</ul></nav>
     <section class="f-col"><h2>Contacto</h2><ul class="f-contact">${ci('map', 'Dirección', `<span>${esc(i.direccion)}</span>`)}${ci('phone', 'Teléfono' + (i.telefonoNota ? ' · ' + esc(i.telefonoNota) : ''), `<a href="tel:${esc(i.telefono.replace(/\D/g, ''))}">${esc(i.telefono)}</a>`)}${ci('mail', 'Correo', `<a href="mailto:${esc(i.correo)}">${esc(i.correo)}</a>`)}${ci('clock', 'Horario de atención', `<span>${esc(i.horario)}</span>`)}</ul></section>
-    <section class="f-col"><h2>Boletín informativo</h2><p>Registra tu interés en recibir el boletín institucional. El envío por correo se habilitará posteriormente.</p><form class="newsletter" data-newsletter style="flex-wrap:wrap"><details style="flex-basis:100%;color:#102b50;background:#fff;padding:8px"><summary>Verificación y privacidad</summary>${captchaHTML('cap-nl')}<label><input type="checkbox" name="acepto" required> Acepto la política de privacidad.</label></details><label class="sr-only" for="nl">Correo electrónico</label><input id="nl" type="email" placeholder="iestp@iestppisco.edu.pe" required><button>Suscribirme</button></form>
-      <h2 class="f-h2b">Enlaces institucionales</h2><div class="f-logos"><a ${linkAttrs(ext('minedu') || 'https://www.gob.pe/minedu')}>MINEDU</a><a ${linkAttrs(ext('dre') || 'https://www.dreica.gob.pe/')}>DRE Ica</a><a href="#/servicios/libro-de-reclamaciones" class="f-lr">${ic('book')} Libro de Reclamaciones</a></div></section>
+    <section class="f-col">
+      <h2>Enlaces institucionales</h2><div class="f-logos"><a ${linkAttrs(ext('minedu') || 'https://www.gob.pe/minedu')}>MINEDU</a>${ext('dre') ? `<a ${linkAttrs(ext('dre'))}>${esc(dreLabel())}</a>` : ''}<a href="#/servicios/libro-de-reclamaciones" class="f-lr">${ic('book')} Libro de Reclamaciones</a></div></section>
   </div>
   <div class="f-bottom"><div class="wrap"><span>© ${yearNow()} ${esc(i.nombre)}. Todos los derechos reservados.</span><nav aria-label="Enlaces legales"><a href="#/terminos-de-uso">Términos de uso</a><a href="#/politica-de-privacidad">Política de privacidad</a><a href="#/mapa-del-sitio">Mapa del sitio</a><a href="#/admin">Intranet</a></nav></div></div></footer>
   ${DB.config.whatsapp.activo && DB.config.whatsapp.numero ? `<a class="wa" href="https://wa.me/${esc(DB.config.whatsapp.numero)}?text=${encodeURIComponent(DB.config.whatsapp.mensaje)}" target="_blank" rel="noopener noreferrer" aria-label="Escríbenos por WhatsApp">${bic('whatsapp')}</a>` : ''}`;
 }
-function bannerHTML(b) {
+/* ===== Diseño «Universitario» (cabecera, portada y pie propios; el menú es el mismo navModel) ===== */
+const isUni = () => !!(DB && DB.config && DB.config.diseno === 'universitario') && !document.body.classList.contains('is-admin');
+const U_IC = { coffee: 'food', settings: 'gear', smile: 'tool', cog: 'gear', dental: 'tool' };
+const uIc = n => ic(ICONS[n] ? n : (U_IC[n] || 'grad'));
+const uSoc = () => { const r = DB.config.redes || {}; return ['facebook', 'youtube', 'instagram', 'tiktok'].filter(k => r[k]).map(k => `<a href="${esc(r[k])}" target="_blank" rel="noopener noreferrer" aria-label="${k} (se abre en una pestaña nueva)">${bic(k)}</a>`).join(''); };
+const uHead = (title, text, btn, tag = 'h2') => `<div class="u-h"><div><${tag}>${title}</${tag}>${text ? `<p>${text}</p>` : ''}</div>${btn || ''}</div>`;
+const uBtn = (href, label) => href ? `<a class="u-out" ${linkAttrs(href)}>${esc(label)}</a>` : '';
+const uCar = (items, label, auto = false) => `<div class="pcar u-car" data-pcar${auto ? '' : ' data-pcar-static'}><button type="button" class="pcar-b prev" data-pcar-b="-1" aria-label="Anterior">‹</button><div class="pcar-t" tabindex="0" role="region" aria-label="${esc(label)} (desplázate para ver más)">${items.map(x => `<div class="pcar-i">${x}</div>`).join('')}</div><button type="button" class="pcar-b next" data-pcar-b="1" aria-label="Siguiente">›</button></div>`;
+const uArrow = () => `<span class="u-sq" aria-hidden="true">${ic('arrow')}</span>`;
+function uniHeader(path, nav, cur) {
+  const i = inst();
+  const acc = [[ext('aula'), 'Plataforma Virtual', 'monitor'], [ext('correo'), 'Correo institucional', 'mail'], [ext('biblioteca'), 'Biblioteca virtual', 'book'], ['#/servicios', 'Servicios en línea', 'inbox'], ['#/admin', 'Intranet', 'lock']].filter(x => x[0]);
+  return `<a class="skip" href="#contenido" onclick="event.preventDefault();document.getElementById('contenido').focus()">Saltar al contenido principal</a>
+  <header class="site-header u-head u-fit-2"><div class="u-bar">
+    <a class="u-brand" href="#/" aria-label="${esc(i.nombreCorto)} - ir a inicio"><img src="${logoSrc()}" alt="Logotipo del ${esc(i.nombre)}"><span><strong>${esc(i.nombreCorto)}</strong><small>${esc(i.slogan)}</small></span></a>
+    <nav class="mainnav" id="mainnav" aria-label="Navegación principal"><div class="wrap"><ul><li><a class="top home ${cur === '' ? 'active' : ''}" href="#/" aria-label="Inicio">${ic('home')}<span class="hide-lg">Inicio</span></a></li>${nav}</ul>
+    <form class="mobile-search" role="search" data-search><label class="sr-only" for="q2">Buscar</label><input class="inp" id="q2" name="q" placeholder="Buscar en el sitio..."><button class="btn gold sm">Buscar</button></form></div></nav>
+    <div class="u-tools"><div class="u-acc"><button type="button" class="u-acc-b" aria-expanded="false" aria-controls="u-acc"><span>Accesos<br>institucionales</span><i class="u-chv" aria-hidden="true"></i></button><ul class="u-acc-m" id="u-acc">${acc.map(([h, l, c]) => `<li><a ${linkAttrs(h)}>${ic(c)} ${esc(l)}${/^https?:/.test(h) ? '<span class="sr-only"> (enlace externo)</span>' : ''}</a></li>`).join('')}<li class="u-acc-c"><a href="mailto:${esc(i.correo)}">${ic('mail')} ${esc(i.correo)}</a></li><li class="u-acc-c"><a href="tel:${esc(String(i.telefono || '').replace(/\D/g, ''))}">${ic('phone')} ${esc(i.telefono)}</a></li></ul></div>
+    <button type="button" class="u-sb" aria-expanded="false" aria-controls="u-srch" aria-label="Abrir el buscador">${ic('search')}</button>
+    <button class="menu-btn" aria-expanded="false" aria-controls="mainnav" data-menu>☰ <span class="sr-only">Abrir menú</span></button></div>
+  </div>
+  <form class="u-srch" id="u-srch" role="search" data-search hidden><div class="wrap"><label class="sr-only" for="q1">Buscar en el sitio</label><input id="q1" name="q" placeholder="¿Qué estás buscando?"><button class="btn">${ic('search')} Buscar</button></div></form></header>`;
+}
+function uniFooter() {
+  const i = inst(); const soc = uSoc(); const y = new Date().getFullYear(); const tel = String(i.telefono || '').replace(/\D/g, '');
+  const legal = [['#/politica-de-privacidad', 'Política de privacidad'], ['#/transparencia/documentos-gestion', 'Portal de transparencia'], ['#/terminos-de-uso', 'Términos de uso'], ['#/mapa-del-sitio', 'Mapa del sitio'], ['#/admin', 'Intranet']];
+  return `<footer class="site-footer u-foot"><div class="wrap u-f">
+    <section><h2>Nuestros programas</h2><div class="u-tags">${progs().map(p => `<a href="#/programas/${esc(p.slug)}">${esc(p.nombre)}</a>`).join('')}</div>
+      <a class="u-fbtn" href="#/admision">Admisión ${y}</a><a class="u-fbtn" href="#/servicios/bolsa-laboral">Bolsa Laboral</a><a class="u-fbtn" href="#/contacto">Contáctanos</a></section>
+    <section><h2>Atención al público</h2><ul class="u-fc"><li>${ic('phone')}<span>Teléfono${i.telefonoNota ? ' (' + esc(i.telefonoNota) + ')' : ''}: <a href="tel:${esc(tel)}">${esc(i.telefono)}</a></span></li><li>${ic('mail')}<span>Correo: <a href="mailto:${esc(i.correo)}">${esc(i.correo)}</a></span></li><li>${ic('map')}<span>${esc(i.direccion)}</span></li><li>${ic('clock')}<span>${esc(i.horario)}</span></li></ul>
+      </section>
+    <section>${soc ? `<div class="social u-soc" aria-label="Redes sociales">${soc}</div>` : ''}<nav aria-label="Enlaces legales"><ul class="u-legal">${legal.map(([h, l]) => `<li><a href="${h}">${l}</a></li>`).join('')}</ul></nav>
+      <div class="u-flogos"><a ${linkAttrs(ext('minedu') || 'https://www.gob.pe/minedu')}>MINEDU</a>${ext('dre') ? `<a ${linkAttrs(ext('dre'))}>${esc(dreLabel())}</a>` : ''}</div>
+      <a href="#/servicios/libro-de-reclamaciones" class="u-lr">${ic('book')}<span>Libro de<br>Reclamaciones</span></a></section>
+  </div><div class="u-fb">© ${yearNow()} ${esc(i.nombre)}${i.ruc ? ' · RUC ' + esc(i.ruc) : ''} · Todos los derechos reservados.</div></footer>
+  ${DB.config.whatsapp.activo && DB.config.whatsapp.numero ? `<a class="wa" href="https://wa.me/${esc(DB.config.whatsapp.numero)}?text=${encodeURIComponent(DB.config.whatsapp.mensaje)}" target="_blank" rel="noopener noreferrer" aria-label="Escríbenos por WhatsApp">${bic('whatsapp')}</a>` : ''}`;
+}
+/* bloques de portada del diseño «Universitario»: mismos bloques y mismo orden/visibilidad que configura Portada */
+function uniBlocks(base, h, i) {
+  const ps = progs(); const sl = sortO(P('slides').filter(isPub));
+  const pics = [...ps.map(p => p.imagen), ...sl.map(s => s.imagen)].filter(Boolean);
+  const dirJ = P('jerarquica').find(j => j.esDirector) || {}; const dir = persona(dirJ.personaId);
+  return Object.assign({}, base, {
+    slider: () => base.slider() + (ps.length ? `<section class="u-prog" aria-label="Programas de estudio"><div class="wrap"><p class="u-prog-k">Conoce nuestros programas de estudio</p><div class="u-prog-g">${ps.map(p => `<a href="#/programas/${esc(p.slug)}"><span class="u-ci">${uIc(p.icono)}</span><b>${esc(p.nombre)}</b></a>`).join('')}</div></div></section>` : ''),
+    accesos: () => { const qs = h.accesos.map(a => { const u = resolveLink(a.enlace); return u ? `<li><a ${linkAttrs(u)}><span class="u-ri">${ic(a.icono)}</span><span><strong>${esc(a.titulo)}</strong><small>${esc(a.texto)}</small></span>${ic('arrow')}</a></li>` : ''; }).filter(Boolean);
+      return `<section class="u-band u-intro"><div class="wrap u-2"><div class="u-intro-t"><span class="u-k">${esc(i.nombre)}</span><h2>${esc(i.lema || i.slogan)}: formamos profesionales técnicos para la región</h2><p>${esc(i.descripcion)}</p><div class="u-collage">${pics.slice(0, 3).map(src => `<img src="${img(src)}" alt="" loading="lazy">`).join('')}<i></i><i></i><i></i></div></div>
+        ${qs.length ? `<div class="u-card u-serv"><h3>Servicios en línea</h3><p>Realiza tus trámites y consultas sin acudir al instituto.</p><ul>${qs.join('')}</ul></div>` : ''}</div></section>`; },
+    bienvenida: () => { const pr = page('presentacion'); if (!pr || !isPub(pr)) return ''; const ps2 = (pr.contenido.match(/<p>[\s\S]*?<\/p>/g) || []).slice(0, 2).join('');
+      return `<section class="u-band u-quote"><div class="wrap u-2"><div><div class="u-h u-h-d"><div><span class="u-k">Bienvenida</span><h2>Mensaje de la Dirección General</h2></div></div><div class="prose">${sanitize(ps2)}</div><a class="u-out u-out-w" href="#/nosotros/presentacion">Leer presentación completa</a></div>
+        <figure class="u-ph"><img src="${img(dir && dir.foto)}" alt="Fotografía de ${esc(fullName(dir))}" loading="lazy"><figcaption><b>${esc(fullName(dir))}</b><em>${esc(dirJ.cargo || 'Dirección General')}</em></figcaption></figure></div></section>`; },
+    cifras: () => `<section class="u-light u-num" aria-label="Cifras institucionales"><div class="wrap"><div class="u-wm" aria-hidden="true">${esc(i.logoSigla || '')}</div>${(() => { const a = +cifra('auto:anios'); return a > 0 ? `<div class="u-numh"><span class="u-big">${cifNum(String(a))}</span><h2>años formando profesionales técnicos</h2></div>` : `<div class="u-numh"><span class="u-big">${cifNum(cifra('auto:programas'))}</span><h2>programas de estudio para tu futuro profesional</h2></div>`; })()}<div class="u-nums">${h.cifras.map(x => `<div class="stat cif${cifLink(x) ? ' cif-a' : ''}"><b>${cifNum(cifra(x.valor))}</b><span>${esc(x.label)}</span><small>Corte: ${esc(x.corte)}</small>${cifA(x)}</div>`).join('')}</div></div></section>`,
+    programas: () => { const card = p => `<article class="u-pc"><img src="${img(p.imagen)}" alt="" loading="lazy"><div><h3><a href="#/programas/${esc(p.slug)}">${esc(p.nombre)}</a></h3><p>${esc(clamp(p.resumen || '', 90))}</p><span class="u-link">Ver programa</span></div></article>`;
+      return `<section class="u-pan-s"><div class="u-pan">${uHead('Programas de estudio', 'Formación profesional técnica de 3 años con título a nombre de la Nación.', uBtn('#/programas', 'Ver todos los programas'))}${progView() === 'carrusel' && ps.length > 1 ? uCar(ps.map(card), 'Programas de estudio', true) : `<div class="u-grid">${ps.map(card).join('')}</div>`}</div></section>`; },
+    noticias: () => { const ns = pubNews().slice(0, newsView('carrusel') === 'carrusel' ? 8 : 6); const card = n => `<article class="u-nc"><div class="u-nimg"><img src="${img(n.imagen, 'ph:campus:4')}" data-fit="${newsImageFit(n)}" alt="" loading="lazy">${uArrow()}</div><div class="u-nb"><time datetime="${esc(n.fecha)}">${fdate(n.fecha)}</time><h3><a href="#/noticias/${esc(n.slug)}">${esc(n.titulo)}</a></h3></div></article>`;
+      return `<section class="u-pan-s"><div class="u-pan">${uHead('Últimas novedades', 'Noticias y actividades de nuestra comunidad educativa.', uBtn('#/noticias', 'Ver más noticias'))}${ns.length ? (newsView('carrusel') === 'carrusel' ? uCar(ns.map(card), 'Últimas novedades') : `<div class="u-ngrid">${ns.map(card).join('')}</div>`) : emptyMsg('noticias')}</div></section>`; },
+    beneficios: () => `<section class="u-light u-mod"><div class="wrap u-2"><div>${uHead(`¿Por qué estudiar en el ${esc(i.nombreCorto)}?`, esc(i.descripcion))}<div class="u-collage u-collage2">${pics.slice(3, 5).map(src => `<img src="${img(src)}" alt="" loading="lazy">`).join('')}<i></i><i></i></div></div>
+      <div class="u-acc-l">${h.beneficios.slice(0, 8).map((b, k) => `<details class="u-ac"${k ? '' : ' open'}><summary><span class="u-ai">${ic(b.i)}</span><b>${esc(b.t)}</b><span class="u-chev" aria-hidden="true">${ic('down')}</span></summary><p>${esc(b.d)}</p></details>`).join('')}</div></div></section>`,
+    jerarquica: () => { const js = sortO(P('jerarquica').filter(isPub)).map(j => ({ j, p: persona(j.personaId) })).filter(x => x.p); if (!js.length) return '';
+      return `<section class="u-light u-team"><div class="wrap">${uHead('Plana jerárquica', 'Conoce al equipo directivo que conduce nuestra institución.', uBtn('#/nosotros/plana-jerarquica', 'Conocer al equipo'))}${uCar(js.map(({ j, p }) => `<article class="u-tc"><img src="${img(p.foto)}" alt="Fotografía de ${esc(fullName(p))}" loading="lazy"><div><b><a href="#/nosotros/plana-jerarquica">${esc(fullName(p))}</a></b><small>${esc(j.cargo)}</small></div>${uArrow()}</article>`), 'Plana jerárquica')}</div></section>`; },
+    testimonios: () => { const es = P('egresados').filter(isPub).slice(0, 6); if (!es.length) return '';
+      return `<section class="u-band u-quote"><div class="wrap">${uHead('Lo que dicen nuestros egresados', '', '')}${uCar(es.map(e => `<figure class="u-ph u-ph-s"><img src="${img(e.foto)}" alt="" loading="lazy"><figcaption><b>${esc(e.nombres)}</b><em>${esc((progById(e.programaId) || {}).nombre || '')} · Promoción ${esc(e.anio)}</em><q>${esc(clamp(e.testimonio || '', 160))}</q></figcaption></figure>`), 'Testimonios de egresados')}</div></section>`; },
+    eventos: () => { const ev = P('eventos').filter(e => isPub(e) && new Date(e.fecha) >= new Date(new Date().toDateString())).sort((a, b) => new Date(a.fecha) - new Date(b.fecha)).slice(0, 3); if (!ev.length) return '';
+      return `<section class="u-pan-s"><div class="u-pan">${uHead('Próximos eventos', '', uBtn('#/eventos', 'Ver agenda completa'))}<div class="grid g3">${ev.map(eventCard).join('')}</div></div></section>`; },
+    enlaces: () => { const all = coll('enlaces').filter(l => !l.deleted && ext(l.id)); let ls = all.filter(l => l.grupo === 'minedu'); if (!ls.length) ls = all.filter(l => l.grupo === 'Institucional' && l.id !== 'web'); if (!ls.length) return '';
+      return `<section class="u-pan-s"><div class="u-pan">${uHead('Plataformas del Estado', 'Enlaces institucionales del sector Educación.', '')}<div class="u-logos">${ls.map(l => `<a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer"><span class="u-lg">${esc((l.id.length <= 10 ? l.id : l.nombre.split(/\s+/)[0]).toUpperCase())}</span><small>${esc(l.nombre)}</small><span class="sr-only"> (se abre en una pestaña nueva)</span></a>`).join('')}</div></div></section>`; },
+  });
+}
+/* ===== Diseño «Impacto» (amarillo y negro, títulos condensados). Cabecera, portada y pie propios; el menú es el mismo navModel ===== */
+const isImp = () => !!(DB && DB.config && IMP_KEYS.includes(DB.config.diseno)) && !document.body.classList.contains('is-admin');
+const I_MES = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SET', 'OCT', 'NOV', 'DIC'];
+const iFecha = (f, anio = true) => { const d = new Date(String(f || '').slice(0, 10) + 'T12:00:00'); return isNaN(d) ? '' : `${String(d.getDate()).padStart(2, '0')} ${I_MES[d.getMonth()]}${anio ? ', ' + d.getFullYear() : ''}`; };
+const iHead = (title, more) => `<div class="i-h"><h2>${title}</h2>${more ? `<a class="i-more" href="${more}">Ver más</a>` : ''}</div>`;
+function impHeader(path, nav, cur) {
+  const i = inst(); const y = new Date().getFullYear(); const adm = admVigente();
+  const top = [['#/admin', 'Intranet'], [ext('aula'), 'Plataforma Virtual'], [ext('correo'), 'Correo institucional'], [ext('biblioteca'), 'Biblioteca virtual'], ['#/servicios', 'Servicios en línea']].filter(x => x[0]);
+  return `<a class="skip" href="#contenido" onclick="event.preventDefault();document.getElementById('contenido').focus()">Saltar al contenido principal</a>
+  <div class="i-top"><div class="wrap">${top.map(([h, l]) => `<a ${linkAttrs(h)}>${esc(l)}${/^https?:/.test(h) ? '<span class="sr-only"> (enlace externo)</span>' : ''}</a>`).join('')}<button type="button" class="u-sb i-sb" aria-expanded="false" aria-controls="u-srch" aria-label="Abrir el buscador">${ic('search')}</button></div></div>
+  <header class="site-header i-head"><div class="i-bar">
+    <a class="i-brand${brandLong() ? ' b-long' : ''}" href="#/" aria-label="${esc(i.nombreCorto)} - ir a inicio"><img src="${logoSrc()}" alt="Logotipo del ${esc(i.nombre)}"><span><strong>${esc(brandSigla())}</strong>${brandLong() ? '' : `<small>${esc(i.nombreCorto)}</small>`}</span></a>
+    <nav class="mainnav" id="mainnav" aria-label="Navegación principal"><div class="wrap"><ul><li><a class="top home ${cur === '' ? 'active' : ''}" href="#/" aria-label="Inicio">${ic('home')}<span class="hide-lg">Inicio</span></a></li>${nav}</ul>
+    <form class="mobile-search" role="search" data-search><label class="sr-only" for="q2">Buscar</label><input class="inp" id="q2" name="q" placeholder="Buscar en el sitio..."><button class="btn gold sm">Buscar</button></form></div></nav>
+    <a class="i-cta" href="#/admision">Postula · Admisión ${esc(adm ? adm.anio : y)}</a>
+    <button class="menu-btn" aria-expanded="false" aria-controls="mainnav" data-menu>☰ <span class="sr-only">Abrir menú</span></button>
+  </div>
+  <form class="u-srch" id="u-srch" role="search" data-search hidden><div class="wrap"><label class="sr-only" for="q1">Buscar en el sitio</label><input id="q1" name="q" placeholder="¿Qué estás buscando?"><button class="btn">${ic('search')} Buscar</button></div></form></header>`;
+}
+function impFooter() {
+  const i = inst(); const soc = uSoc();
+  const col = (title, links) => `<nav aria-label="${esc(title)}"><h2>${esc(title)}</h2><ul>${links.map(([h, l]) => `<li><a ${linkAttrs(h)}>${esc(l)}</a></li>`).join('')}</ul></nav>`;
+  return `<footer class="site-footer i-foot"><div class="wrap i-f">
+    <section><h2>Nuestros programas</h2><ul class="i-inline">${progs().map(p => `<li><a href="#/programas/${esc(p.slug)}">${esc(p.nombre)}</a></li>`).join('')}</ul>
+      <h2>Atención al público</h2><ul class="i-inline i-at"><li><a href="tel:${esc(String(i.telefono || '').replace(/\D/g, ''))}">${esc(i.telefono)}</a></li><li><a href="mailto:${esc(i.correo)}">${esc(i.correo)}</a></li><li>${esc(i.direccion)}</li></ul></section>
+    ${col('Institucional', [['#/nosotros/presentacion', 'Nosotros'], ['#/transparencia/documentos-gestion', 'Portal de transparencia'], ['#/politica-de-privacidad', 'Política de privacidad'], ['#/terminos-de-uso', 'Términos de uso']])}
+    ${col('Comunidad', [['#/eventos', 'Eventos'], ['#/noticias', 'Noticias'], ['#/contacto', 'Contáctanos'], ['#/admin', 'Intranet']])}
+    <section><h2>Enlaces institucionales</h2><div class="i-flogos"><a ${linkAttrs(ext('minedu') || 'https://www.gob.pe/minedu')}>MINEDU</a>${ext('dre') ? `<a ${linkAttrs(ext('dre'))}>${esc(dreLabel())}</a>` : ''}</div></section>
+  </div>
+  <div class="wrap i-f2"><a href="#/servicios/libro-de-reclamaciones" class="i-lr">${ic('book')}<span>Libro de<br>Reclamaciones</span></a>${soc ? `<div class="social i-soc" aria-label="Redes sociales">${soc}</div>` : ''}</div>
+  <div class="i-fb">${esc(i.nombre)}${i.ruc ? ' – RUC N.° ' + esc(i.ruc) : ''} · © ${yearNow()}</div></footer>
+  ${DB.config.whatsapp.activo && DB.config.whatsapp.numero ? `<a class="wa" href="https://wa.me/${esc(DB.config.whatsapp.numero)}?text=${encodeURIComponent(DB.config.whatsapp.mensaje)}" target="_blank" rel="noopener noreferrer" aria-label="Escríbenos por WhatsApp">${bic('whatsapp')}</a>` : ''}`;
+}
+/* bloques de portada del diseño «Impacto»: mismos bloques y mismo orden/visibilidad que configura Portada */
+function impBlocks(base, h, i) {
+  const ps = progs(); const sl = sortO(P('slides').filter(isPub));
+  const pics = [...sl.map(s => s.imagen), ...ps.map(p => p.imagen)].filter(Boolean);
+  const loc = P('locales').filter(isPub).find(l => l.foto);
+  const dirJ = P('jerarquica').find(j => j.esDirector) || {}; const dir = persona(dirJ.personaId);
+  return Object.assign({}, base, {
+    slider: () => { const html = base.slider(); return html ? html.replace(/<\/section>\s*$/, `<a class="i-down" href="#i-start" onclick="event.preventDefault();var t=document.getElementById('i-start');if(t)t.scrollIntoView({behavior:'smooth'})" aria-label="Ir al contenido de la portada"><span aria-hidden="true"></span></a></section><span id="i-start"></span>`) : ''; },
+    programas: () => ps.length ? `<section class="i-sec i-prog"><div class="wrap"><h2 class="i-ttl i-gold">Programas de estudio</h2><div class="i-tiles">${ps.map(p => `<a class="i-tile" href="#/programas/${esc(p.slug)}"><img src="${img(p.imagen)}" alt="" loading="lazy"><b>${esc(p.nombre)}</b></a>`).join('')}</div><p class="i-c"><a class="i-btn" href="#/programas">${ic('search')} Ver programas de estudio</a></p></div></section>` : '',
+    bienvenida: () => { const pr = page('presentacion'); if (!pr || !isPub(pr)) return '';
+      return `<section class="i-sec"><div class="wrap i-duo"><a class="i-pa" href="#/nosotros/presentacion"><img src="${img(dir && dir.foto || pics[0])}" alt="" loading="lazy"><span><i aria-hidden="true">+</i>Mensaje de la<br>Dirección General</span></a><a class="i-pb" href="#/nosotros/campus-e-informes"><img src="${img(loc && loc.foto || pics[1] || pics[0])}" alt="" loading="lazy"><span><b>Nuestro campus</b><small>${esc(i.direccion)}</small></span></a></div></section>`; },
+    accesos: () => { const qs = h.accesos.map(a => { const u = resolveLink(a.enlace); return u ? `<a class="i-box" ${linkAttrs(u)}><i aria-hidden="true">+</i><span><b>${esc(a.titulo)}</b><small>${esc(a.texto)}</small></span></a>` : ''; }).filter(Boolean);
+      return qs.length ? `<section class="i-sec"><div class="wrap"><h2 class="i-ttl">Conoce nuestros servicios en línea:</h2><div class="i-boxes">${qs.join('')}</div></div></section>` : ''; },
+    beneficios: () => `<section class="i-sec"><div class="wrap"><h2 class="i-ttl">¿Por qué estudiar en el ${esc(i.nombreCorto)}?</h2><div class="i-boxes">${h.beneficios.slice(0, 8).map(b => `<details class="i-box i-acc"><summary><i aria-hidden="true">+</i><b>${esc(b.t)}</b></summary><p>${esc(b.d)}</p></details>`).join('')}</div></div></section>`,
+    cifras: () => { const cs = h.cifras.filter(x => String(cifra(x.valor)).trim()); if (!cs.length) return '';
+      return `<section class="i-black" aria-label="Cifras institucionales" data-iach><div class="wrap i-ach">${cs.map((x, k) => `<div class="i-ach-i cif${k ? '' : ' on'}"${k ? ' hidden' : ''}><div><span class="i-num">${String(k + 1).padStart(2, '0')}</span><h2>${cifNum(cifra(x.valor))} ${esc(x.label)}</h2><p>${esc(i.descripcion)}</p><small>Corte: ${esc(x.corte)}</small>${cifLink(x) ? `<a class="i-cifl" ${linkAttrs(cifLink(x))}>Ver más <span aria-hidden="true">→</span></a>` : ''}</div><figure>${pics[k % Math.max(pics.length, 1)] ? `<img src="${img(pics[k % pics.length])}" alt="" loading="lazy">` : ''}</figure></div>`).join('')}
+        ${cs.length > 1 ? `<div class="i-ach-n"><button type="button" data-iach="-1" aria-label="Anterior">‹</button><button type="button" data-iach="1">Siguiente <span aria-hidden="true">›</span></button></div>` : ''}</div></section>`; },
+    noticias: () => { const ns = pubNews().slice(0, newsCount()); return `<section class="i-sec"><div class="wrap">${iHead('Noticias', '#/noticias')}${ns.length ? newsWrap(ns.map(n => `<article class="i-card"><img src="${img(n.imagen, 'ph:campus:4')}" data-fit="${newsImageFit(n)}" alt="" loading="lazy"><div><time datetime="${esc(n.fecha)}">${iFecha(n.fecha)}</time><h3><a href="#/noticias/${esc(n.slug)}">${esc(n.titulo)}</a></h3><a class="i-lk" href="#/noticias/${esc(n.slug)}" aria-hidden="true" tabindex="-1">Leer</a></div></article>`), h => `<div class="i-cards">${h}</div>`, 'tarjetas', 'i-ncar') : emptyMsg('noticias')}</div></section>`; },
+    eventos: () => { const ev = P('eventos').filter(e => isPub(e) && new Date(e.fecha) >= new Date(new Date().toDateString())).sort((a, b) => new Date(a.fecha) - new Date(b.fecha)).slice(0, 3); if (!ev.length) return '';
+      return `<section class="i-sec"><div class="wrap">${iHead('Eventos', '#/eventos')}<div class="i-cards">${ev.map(e => `<article class="i-card"><img src="${img(e.imagen, 'ph:campus:2')}" alt="" loading="lazy"><div><time datetime="${esc(e.fecha)}">${iFecha(e.fecha, false)}</time><h3><a href="#/eventos">${esc(e.titulo)}</a></h3><a class="i-lk" href="#/eventos" aria-hidden="true" tabindex="-1">Ver detalle</a></div></article>`).join('')}</div></div></section>`; },
+    jerarquica: () => { const js = sortO(P('jerarquica').filter(isPub)).map(j => ({ j, p: persona(j.personaId) })).filter(x => x.p); if (!js.length) return '';
+      return `<section class="i-sec i-team"><div class="wrap"><h2 class="i-ttl i-cen">Conoce a nuestro equipo directivo</h2></div>${uCar(js.map(({ j, p }) => `<a class="i-tile i-tile-w" href="#/nosotros/plana-jerarquica"><img src="${img(p.foto)}" alt="" loading="lazy"><b>${esc(fullName(p))}<small>${esc(j.cargo)}</small></b></a>`), 'Plana jerárquica')}</section>`; },
+    testimonios: () => { const es = P('egresados').filter(isPub).slice(0, 3); if (!es.length) return '';
+      return `<section class="i-sec"><div class="wrap">${iHead('Nuestros egresados', '')}<div class="i-cards">${es.map(e => `<figure class="i-card i-q"><img src="${img(e.foto)}" alt="" loading="lazy"><figcaption><q>${esc(clamp(e.testimonio || '', 170))}</q><b>${esc(e.nombres)}</b><small>${esc((progById(e.programaId) || {}).nombre || '')} · Promoción ${esc(e.anio)}</small></figcaption></figure>`).join('')}</div></div></section>`; },
+    enlaces: () => { const all = coll('enlaces').filter(l => !l.deleted && ext(l.id)); let ls = all.filter(l => l.grupo === 'minedu'); if (!ls.length) ls = all.filter(l => l.grupo === 'Institucional' && l.id !== 'web'); if (!ls.length) return '';
+      return `<section class="i-sec"><div class="wrap"><h2 class="i-ttl i-cen">Plataformas del Estado</h2><div class="i-logos">${ls.map(l => `<a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer"><b>${esc((l.id.length <= 10 ? l.id : l.nombre.split(/\s+/)[0]).toUpperCase())}</b><small>${esc(l.nombre)}</small><span class="sr-only"> (se abre en una pestaña nueva)</span></a>`).join('')}</div></div></section>`; },
+  });
+}
+/* ===== Diseño «Horizonte»: franjas de color con esquinas redondeadas, acento y títulos en dos colores ===== */
+const isHor = () => !!(DB && DB.config && DB.config.diseno === 'horizonte') && !document.body.classList.contains('is-admin');
+const hTtl = (a, b, cls = '', tag = 'h2') => `<${tag} class="h-ttl ${cls}">${a}${b ? ` <em>${b}</em>` : ''}</${tag}>`;
+const hMore = (href, label = 'Conoce más') => `<a class="h-more" ${linkAttrs(href)}>${esc(label)} <span aria-hidden="true">→</span></a>`;
+function horHeader(path, nav, cur) {
+  const i = inst(); const adm = admVigente(); const y = new Date().getFullYear();
+  const top = [['#/servicios', 'Servicios en línea'], [ext('aula'), 'Plataforma Virtual'], [ext('correo'), 'Correo institucional'], [ext('biblioteca'), 'Biblioteca virtual'], ['#/admin', 'Intranet']].filter(x => x[0]);
+  return `<a class="skip" href="#contenido" onclick="event.preventDefault();document.getElementById('contenido').focus()">Saltar al contenido principal</a>
+  <header class="site-header h-head"><a class="h-brand${brandLong() ? ' b-long' : ''}" href="#/" aria-label="${esc(i.nombreCorto)} - ir a inicio"><img src="${logoSrc()}" alt="Logotipo del ${esc(i.nombre)}"><span>${brandLong() ? '' : '<small>Instituto de Educación Superior</small>'}<strong>${esc(brandSigla())}</strong><em>${esc(i.slogan)}</em></span></a>
+    <div class="h-rows"><div class="h-top">${top.map(([h, l]) => `<a ${linkAttrs(h)}>${esc(l)}${/^https?:/.test(h) ? '<span class="sr-only"> (enlace externo)</span>' : ''}</a>`).join('')}<button type="button" class="u-sb h-sb" aria-expanded="false" aria-controls="u-srch" aria-label="Abrir el buscador">${ic('search')}</button></div>
+      <div class="h-main"><nav class="mainnav" id="mainnav" aria-label="Navegación principal"><div class="wrap"><ul><li><a class="top home ${cur === '' ? 'active' : ''}" href="#/" aria-label="Inicio">${ic('home')}<span class="hide-lg">Inicio</span></a></li>${nav}</ul>
+        <form class="mobile-search" role="search" data-search><label class="sr-only" for="q2">Buscar</label><input class="inp" id="q2" name="q" placeholder="Buscar en el sitio..."><button class="btn gold sm">Buscar</button></form></div></nav>
+        <a class="h-cta" href="#/admision"><span>Postula</span><small>Admisión ${esc(adm ? adm.anio : y)}</small></a>
+        <button class="menu-btn" aria-expanded="false" aria-controls="mainnav" data-menu>☰ <span class="sr-only">Abrir menú</span></button></div></div>
+    <form class="u-srch" id="u-srch" role="search" data-search hidden><div class="wrap"><label class="sr-only" for="q1">Buscar en el sitio</label><input id="q1" name="q" placeholder="¿Qué estás buscando?"><button class="btn">${ic('search')} Buscar</button></div></form></header>`;
+}
+function horFooter() {
+  const i = inst(); const r = DB.config.redes || {}; const tel = String(i.telefono || '').replace(/\D/g, '');
+  const soc = ['facebook', 'youtube', 'instagram', 'tiktok'].filter(k => r[k]).map(k => `<a href="${esc(r[k])}" target="_blank" rel="noopener noreferrer" aria-label="${k} (se abre en una pestaña nueva)">${bic(k)}</a>`).join('');
+  const grp = (t, ls) => `<div class="h-fg"><h3>${esc(t)}</h3><ul>${ls.map(([h, l]) => `<li><a ${linkAttrs(h)}>${esc(l)}</a></li>`).join('')}</ul></div>`;
+  return `${soc ? `<section class="h-social"><div class="wrap">${hTtl('Síguenos y entérate', 'de lo nuevo')}<div class="h-soc">${soc}</div></div></section>` : ''}
+  <footer class="site-footer h-foot"><div class="wrap h-f">
+    <div>${grp('Admisión', [['#/admision', 'Proceso de admisión'], ['#/matricula', 'Matrícula'], ['#/becas', 'Becas']])}${grp('Servicios', [['#/servicios/mesa-de-partes', 'Mesa de partes'], ['#/servicios/consulta-certificados', 'Consulta de certificados'], ['#/servicios/bolsa-laboral', 'Bolsa laboral'], ['#/transparencia/documentos-gestion', 'Portal de transparencia'], ['#/mapa-del-sitio', 'Mapa del sitio']])}
+      <a href="#/servicios/libro-de-reclamaciones" class="h-lr">${ic('book')}<span>Libro de<br>Reclamaciones</span></a></div>
+    <div>${grp('Programas de estudio', progs().map(p => ['#/programas/' + p.slug, p.nombre]))}${grp('Institucional', [['#/nosotros/presentacion', 'Nosotros'], ['#/noticias', 'Noticias'], ['#/eventos', 'Eventos'], ['#/contacto', 'Contáctanos'], ['#/admin', 'Intranet']])}</div>
+    <div class="h-fc"><h3>Sede institucional</h3><p>${ic('map')}<span>${esc(i.direccion)}</span></p><p>${ic('phone')}<a href="tel:${esc(tel)}">${esc(i.telefono)}</a></p><p>${ic('mail')}<a href="mailto:${esc(i.correo)}">${esc(i.correo)}</a></p><p>${ic('clock')}<span>${esc(i.horario)}</span></p>
+      <h3>Enlaces institucionales</h3><p class="h-fl"><a ${linkAttrs(ext('minedu') || 'https://www.gob.pe/minedu')}>MINEDU</a>${ext('dre') ? `<a ${linkAttrs(ext('dre'))}>${esc(dreLabel())}</a>` : ''}</p></div>
+  </div><div class="wrap h-fb"><a class="h-fbrand${brandLong() ? ' b-long' : ''}" href="#/">${brandLong() ? '' : '<small>Instituto de Educación Superior</small>'}<strong>${esc(brandSigla())}</strong></a><nav aria-label="Enlaces legales"><a href="#/politica-de-privacidad">Política de privacidad</a><a href="#/terminos-de-uso">Términos de uso</a><a href="#/transparencia/documentos-gestion">Transparencia</a></nav><div class="h-soc h-soc-s">${soc}</div></div>
+  <div class="h-copy">© ${yearNow()} ${esc(i.nombre)}${i.ruc ? ' · RUC ' + esc(i.ruc) : ''}</div></footer>
+  ${DB.config.whatsapp.activo && DB.config.whatsapp.numero ? `<a class="wa" href="https://wa.me/${esc(DB.config.whatsapp.numero)}?text=${encodeURIComponent(DB.config.whatsapp.mensaje)}" target="_blank" rel="noopener noreferrer" aria-label="Escríbenos por WhatsApp">${bic('whatsapp')}</a>` : ''}`;
+}
+/* bloques de portada del diseño «Horizonte»: mismos bloques y mismo orden/visibilidad que configura Portada */
+function horBlocks(base, h, i) {
+  const ps = progs(); const sl = sortO(P('slides').filter(isPub));
+  const pics = [...sl.map(s => s.imagen), ...ps.map(p => p.imagen)].filter(Boolean);
+  const loc = P('locales').filter(isPub).find(l => l.foto);
+  const dirJ = P('jerarquica').find(j => j.esDirector) || {}; const dir = persona(dirJ.personaId);
+  const tabs = (id, items, label) => `<div class="h-tabs" data-htabs role="tablist" aria-label="${esc(label)}">${items.map((x, k) => `<button type="button" role="tab" id="${id}-t${k}" aria-controls="${id}-p${k}" aria-selected="${k ? 'false' : 'true'}" data-htab="${k}">${esc(x)}</button>`).join('')}</div>`;
+  return Object.assign({}, base, {
+    programas: () => ps.length ? `<section class="h-oferta"><div class="wrap"><div class="h-panel">${hTtl('Conoce nuestra', 'oferta formativa', 'h-c')}<div class="h-ofg">${ps.map(p => `<article class="h-of"><h3><a href="#/programas/${esc(p.slug)}">${esc(p.nombre)}</a></h3><small>${esc(p.duracion || 'Programa de estudios · 3 años')}</small><i class="h-line" aria-hidden="true"></i><img src="${img(p.imagen)}" alt="" loading="lazy"><p>${esc(clamp(p.resumen || '', 120))}</p>${hMore('#/programas/' + p.slug)}</article>`).join('')}</div></div></div></section>` : '',
+    cifras: () => { const cs = h.cifras.filter(x => String(cifra(x.valor)).trim()); if (!cs.length) return '';
+      return `<section class="h-cal"><div class="wrap"><div class="h-band">${hTtl('Calidad', 'institucional')}<p>${esc(i.descripcion)}</p></div><div class="h-nums">${cs.map(x => `<div class="cif${cifLink(x) ? ' cif-a' : ''}"><b>${cifNum(cifra(x.valor))}</b><span>${esc(x.label)}</span><small>Corte ${esc(x.corte)}</small>${cifA(x)}</div>`).join('')}</div></div></section>`; },
+    beneficios: () => { const bs = h.beneficios.slice(0, 6); if (!bs.length) return '';
+      return `<section class="h-ben"><div class="wrap">${hTtl('Beneficios de estudiar en el', esc(i.nombreCorto), 'h-c')}<div class="h-bpan" data-htabgroup><img src="${img(pics[1] || pics[0])}" alt="" loading="lazy">${tabs('hb', bs.map(b => b.t), 'Beneficios')}<div class="h-bbody">${bs.map((b, k) => `<div role="tabpanel" id="hb-p${k}" aria-labelledby="hb-t${k}" data-hpane="${k}"${k ? ' hidden' : ''}><h3>${esc(b.t)}</h3><p>${esc(b.d)}</p>${hMore('#/nosotros/presentacion')}</div>`).join('')}</div></div></div></section>`; },
+    testimonios: () => { const es = P('egresados').filter(isPub).slice(0, 3); if (!es.length) return '';
+      return `<section class="h-testi"><div class="wrap"><div class="h-th">${hTtl('Lo que dicen', 'nuestros egresados')}<p>Nuestros egresados llevaron su <b>formación técnica</b> a la <b>vida profesional</b>. Estos son sus testimonios.</p></div><div class="h-tc">${es.map(e => `<figure class="h-pc"><img src="${img(e.foto)}" alt="" loading="lazy"><figcaption><q>${esc(clamp(e.testimonio || '', 120))}</q><b>${esc(e.nombres)}</b><small>${esc((progById(e.programaId) || {}).nombre || '')} · Promoción ${esc(e.anio)}</small></figcaption></figure>`).join('')}</div></div></section>`; },
+    jerarquica: () => { const js = sortO(P('jerarquica').filter(isPub)).map(j => ({ j, p: persona(j.personaId) })).filter(x => x.p).slice(0, 4); if (!js.length) return '';
+      return `<section class="h-team"><div class="wrap"><div class="h-th h-th-l">${hTtl('Conoce a nuestro', 'equipo directivo')}${hMore('#/nosotros/plana-jerarquica', 'Ver plana jerárquica')}</div><div class="h-tc h-tc4">${js.map(({ j, p }) => `<a class="h-pc" href="#/nosotros/plana-jerarquica"><img src="${img(p.foto)}" alt="" loading="lazy"><span class="h-pcx"><b>${esc(fullName(p))}</b><small>${esc(j.cargo)}</small></span></a>`).join('')}</div></div></section>`; },
+    bienvenida: () => { const pr = page('presentacion'); if (!pr || !isPub(pr)) return ''; const tx = (pr.contenido.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());
+      return `<section class="h-msg"><div class="wrap h-2"><article class="h-mcard"><img src="${img(loc && loc.foto || pics[0])}" alt="" loading="lazy"><div class="h-mp"><img src="${img(dir && dir.foto)}" alt=""><div><b>${esc(fullName(dir))}</b><small>${esc(dirJ.cargo || 'Dirección General')}</small></div></div><p>${esc(clamp(tx, 260))}</p></article>
+        <div>${hTtl('Mensaje de la', 'Dirección General')}<h3>${esc(i.lema || i.slogan || '')}</h3><p>${esc(i.descripcion)}</p><a class="h-pill" href="#/nosotros/presentacion">Conoce más <span aria-hidden="true">›</span></a></div></div></section>`; },
+    accesos: () => { const qs = h.accesos.map(a => ({ a, u: resolveLink(a.enlace) })).filter(x => x.u); if (!qs.length) return '';
+      return `<section class="h-camp"><div class="wrap">${hTtl('Servicios', 'en línea', 'h-c h-w')}<p class="h-sub">Realiza tus trámites y consultas desde cualquier lugar, sin acudir al instituto.</p><div data-htabgroup>${tabs('ha', qs.map(x => x.a.titulo), 'Servicios en línea')}
+        <div class="h-ccard"><button type="button" class="h-arr" data-hstep="-1" aria-label="Servicio anterior">‹</button>${qs.map(({ a, u }, k) => `<div class="h-cin" role="tabpanel" id="ha-p${k}" aria-labelledby="ha-t${k}" data-hpane="${k}"${k ? ' hidden' : ''}><span class="h-cic">${ic(a.icono)}</span><div>${hTtl('', esc(a.titulo), '', 'h3')}<p>${esc(a.texto)}</p><p class="h-cl">${ic('map')} ${esc(i.direccion)}</p><p class="h-cl">${ic('mail')} ${esc(i.correo)}</p><a class="h-more" ${linkAttrs(u)}>Ingresar al servicio <span aria-hidden="true">→</span></a></div></div>`).join('')}<button type="button" class="h-arr" data-hstep="1" aria-label="Servicio siguiente">›</button></div></div></div></section>`; },
+    enlaces: () => { const all = coll('enlaces').filter(l => !l.deleted && ext(l.id)); let ls = all.filter(l => l.grupo === 'minedu'); if (!ls.length) ls = all.filter(l => l.grupo === 'Institucional' && l.id !== 'web'); if (!ls.length) return '';
+      return `<section class="h-rank"><div class="wrap"><div class="h-rg">${ls.slice(0, 6).map(l => `<a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer"><b>${esc((l.id.length <= 10 ? l.id : l.nombre.split(/\s+/)[0]).toUpperCase())}</b><small>${esc(l.nombre)}</small><span class="sr-only"> (se abre en una pestaña nueva)</span></a>`).join('')}</div></div></section>`; },
+    noticias: () => { const ns = pubNews().slice(0, newsCount()); return `<section class="h-news"><div class="h-nband"><div class="wrap h-th h-th-l">${hTtl('Noticias', 'del instituto', 'h-w')}${hMore('#/noticias', 'Ver todas las noticias')}</div></div><div class="wrap">${ns.length ? newsWrap(ns.map(n => `<article class="h-nc"><img src="${img(n.imagen, 'ph:campus:4')}" data-fit="${newsImageFit(n)}" alt="" loading="lazy"><div><time datetime="${esc(n.fecha)}">${fdate(n.fecha)}</time><h3><a href="#/noticias/${esc(n.slug)}">${esc(n.titulo)}</a></h3>${hMore('#/noticias/' + n.slug, 'Leer más')}</div></article>`), h => `<div class="h-ncards">${h}</div>`, 'tarjetas', 'h-ncar') : emptyMsg('noticias')}</div></section>`; },
+    eventos: () => { const ev = P('eventos').filter(e => isPub(e) && new Date(e.fecha) >= new Date(new Date().toDateString())).sort((a, b) => new Date(a.fecha) - new Date(b.fecha)).slice(0, 3); if (!ev.length) return '';
+      return `<section class="h-ev"><div class="wrap"><div class="h-th h-th-l">${hTtl('Próximos', 'eventos')}${hMore('#/eventos', 'Ver agenda')}</div><div class="grid g3">${ev.map(eventCard).join('')}</div></div></section>`; },
+  });
+}
+/* ===== Diseño «Campus»: barra de color, menú en mayúsculas sobre la portada y tarjetas en capas ===== */
+const isCam = () => !!(DB && DB.config && DB.config.diseno === 'campus') && !document.body.classList.contains('is-admin');
+const kTtl = (t, tag = 'h2', cls = '') => `<${tag} class="k-ttl ${cls}">${t}</${tag}>`;
+const K_TONOS = ['var(--kp)', 'var(--blue)', 'var(--kk)', 'var(--navy2)']; // capas de color de Campus: todas salen de los colores del portal
+function camHeader(path, nav, cur) {
+  const i = inst(); const r = DB.config.redes || {};
+  const soc = ['facebook', 'youtube', 'instagram', 'tiktok'].filter(k => r[k]).map(k => `<a href="${esc(r[k])}" target="_blank" rel="noopener noreferrer" aria-label="${k} (se abre en una pestaña nueva)">${bic(k)}</a>`).join('');
+  const top = [['#/servicios', 'Servicios en línea'], ['#/servicios/bolsa-laboral', 'Bolsa laboral'], [ext('biblioteca'), 'Biblioteca'], ['#/eventos', 'Eventos'], ['#/transparencia/documentos-gestion', 'Transparencia']].filter(x => x[0]);
+  return `<a class="skip" href="#contenido" onclick="event.preventDefault();document.getElementById('contenido').focus()">Saltar al contenido principal</a>
+  <div class="k-top"><div class="k-tw">${soc ? `<div class="k-soc">${soc}</div>` : ''}<nav class="k-tl" aria-label="Accesos">${top.map(([h, l]) => `<a ${linkAttrs(h)}>${esc(l)}${/^https?:/.test(h) ? '<span class="sr-only"> (enlace externo)</span>' : ''}</a>`).join('')}</nav><a class="k-portal" href="#/admin">Intranet</a>${ext('aula') ? `<a class="k-portal" ${linkAttrs(ext('aula'))}>Plataforma virtual<span class="sr-only"> (enlace externo)</span></a>` : ''}</div></div>
+  <header class="site-header k-head"><div class="k-bar">
+    <a class="k-brand${brandLong() ? ' b-long' : ''}" href="#/" aria-label="${esc(i.nombreCorto)} - ir a inicio"><img src="${logoSrc()}" alt="Logotipo del ${esc(i.nombre)}"><span><strong>${esc(brandSigla())}</strong>${brandLong() ? '' : `<small>${esc(i.nombreCorto)}</small>`}</span></a>
+    <nav class="mainnav" id="mainnav" aria-label="Navegación principal"><div class="wrap"><ul><li><a class="top home ${cur === '' ? 'active' : ''}" href="#/" aria-label="Inicio">${ic('home')}<span class="hide-lg">Inicio</span></a></li>${nav}</ul>
+      <form class="mobile-search" role="search" data-search><label class="sr-only" for="q2">Buscar</label><input class="inp" id="q2" name="q" placeholder="Buscar en el sitio..."><button class="btn gold sm">Buscar</button></form></div></nav>
+    <button type="button" class="u-sb k-sb" aria-expanded="false" aria-controls="u-srch" aria-label="Abrir el buscador">${ic('search')}</button>
+    <button class="menu-btn" aria-expanded="false" aria-controls="mainnav" data-menu>☰ <span class="sr-only">Abrir menú</span></button></div>
+    <form class="u-srch" id="u-srch" role="search" data-search hidden><div class="wrap"><label class="sr-only" for="q1">Buscar en el sitio</label><input id="q1" name="q" placeholder="¿Qué estás buscando?"><button class="btn">${ic('search')} Buscar</button></div></form></header>
+  ${['servicios', 'admin', 'contacto'].includes(cur) || /^(mesa-de-partes|certificados|libro-de-reclamaciones|bolsa-laboral)$/.test(cur) ? '' : `<div class="k-float${cur ? ' k-mini' : ''}" aria-label="Accesos destacados"><a class="k-f1" href="#/admision">${ic('send')}<span>Quiero postular</span></a><a class="k-f2" href="#/servicios/mesa-de-partes">${ic('inbox')}<span>Mesa de partes</span></a><a class="k-f3" href="#/servicios/consulta-certificados">${ic('award')}<span>Certificados</span></a></div>`}`;
+}
+function camFooter() {
+  const i = inst(); const r = DB.config.redes || {}; const tel = String(i.telefono || '').replace(/\D/g, '');
+  const soc = ['facebook', 'youtube', 'instagram', 'tiktok'].filter(k => r[k]).map(k => `<a href="${esc(r[k])}" target="_blank" rel="noopener noreferrer" aria-label="${k} (se abre en una pestaña nueva)">${bic(k)}</a>`).join('');
+  const cols = [[['#/', 'Inicio'], ['#/programas', 'Programas de estudio'], ['#/admision', 'Admisión'], ['#/matricula', 'Matrícula'], ['#/becas', 'Becas']],
+    [['#/nosotros/presentacion', 'Nosotros'], ['#/noticias', 'Noticias'], ['#/eventos', 'Eventos'], ['#/nosotros/plana-docente', 'Plana docente'], ['#/contacto', 'Contáctanos']],
+    [['#/servicios/mesa-de-partes', 'Mesa de partes'], ['#/servicios/consulta-certificados', 'Consulta de certificados'], ['#/servicios/bolsa-laboral', 'Bolsa laboral'], ['#/transparencia/documentos-gestion', 'Portal de transparencia'], ['#/politica-de-privacidad', 'Política de privacidad']]];
+  return `<footer class="site-footer k-foot"><div class="k-fl"><div class="wrap k-fg">${cols.map(c => `<ul>${c.map(([h, l]) => `<li><a href="${h}">${esc(l)}</a></li>`).join('')}</ul>`).join('')}</div></div>
+    <div class="k-fb"><div class="wrap k-fg"><div>${soc ? `<div class="k-soc k-soc-b">${soc}</div>` : ''}<a href="#/servicios/libro-de-reclamaciones" class="k-lr">${ic('book')}<span>Libro de<br>Reclamaciones</span></a></div>
+      <div><h2>Ubícanos</h2><p>${esc(i.direccion)}<br>Correo: <a href="mailto:${esc(i.correo)}">${esc(i.correo)}</a><br>Teléfono: <a href="tel:${esc(tel)}">${esc(i.telefono)}</a></p></div>
+      <div><h2>Horario de atención</h2><p>${esc(i.horario)}</p><p class="k-fx"><a ${linkAttrs(ext('minedu') || 'https://www.gob.pe/minedu')}>MINEDU</a>${ext('dre') ? `<a ${linkAttrs(ext('dre'))}>${esc(dreLabel())}</a>` : ''}</p></div></div></div>
+    <div class="k-copy"><div class="wrap"><span>© ${yearNow()} ${esc(i.nombre)} | Todos los derechos reservados.</span>${i.ruc ? `<span>RUC: ${esc(i.ruc)}</span>` : ''}</div></div></footer>
+  ${DB.config.whatsapp.activo && DB.config.whatsapp.numero ? `<a class="wa" href="https://wa.me/${esc(DB.config.whatsapp.numero)}?text=${encodeURIComponent(DB.config.whatsapp.mensaje)}" target="_blank" rel="noopener noreferrer" aria-label="Escríbenos por WhatsApp">${bic('whatsapp')}</a>` : ''}`;
+}
+/* bloques de portada del diseño «Campus»: mismos bloques y mismo orden/visibilidad que configura Portada */
+function camBlocks(base, h, i) {
+  const ps = progs(); const sl = sortO(P('slides').filter(isPub));
+  const pics = [...sl.map(s => s.imagen), ...ps.map(p => p.imagen)].filter(Boolean);
+  const loc = P('locales').filter(isPub).find(l => l.foto);
+  const dirJ = P('jerarquica').find(j => j.esDirector) || {}; const dir = persona(dirJ.personaId);
+  const lay = (href, imgSrc, icon, title, k, more = 'Conoce más aquí') => `<a class="k-lay" href="${esc(href)}" style="--kt:${K_TONOS[k % 4]}"><span class="k-lay-p"><img src="${img(imgSrc)}" alt="" loading="lazy"></span><span class="k-lay-l"><span class="k-lay-n">${ic(icon)}<b>${esc(title)}</b></span><em>${esc(more)} ›</em></span></a>`;
+  const car = (items, label) => uCar(items, label);
+  return Object.assign({}, base, {
+    programas: () => ps.length ? `<section class="k-sec"><div class="wrap">${kTtl('Nuestros programas pensados en ti')}<div class="k-tabs" role="list"><span role="listitem" class="on">Programas de estudio</span><a role="listitem" href="#/admision">Admisión ${esc(String((admVigente() || {}).anio || new Date().getFullYear()))}</a><a role="listitem" href="#/becas">Becas</a></div>
+      <div class="k-car">${car(ps.map((p, k) => lay('#/programas/' + p.slug, p.imagen, U_IC[p.icono] && ICONS[U_IC[p.icono]] ? U_IC[p.icono] : (ICONS[p.icono] ? p.icono : 'grad'), p.nombre, k)), 'Programas de estudio')}</div></div></section>` : '',
+    beneficios: () => { const bs = h.beneficios.slice(0, 5); if (!bs.length) return '';
+      return `<section class="k-sec k-gray">${kTtl(`¿Por qué estudiar en el ${esc(i.nombreCorto)}?`)}<div class="wrap k-why">${bs.map((b, k) => `<details class="k-wc"><summary><img src="${img(pics[k % Math.max(pics.length, 1)] || '')}" alt="" loading="lazy"><span><b>${esc(b.t)}</b><em>Conoce más aquí</em></span></summary><p>${esc(b.d)}</p></details>`).join('')}</div></section>`; },
+    accesos: () => { const qs = h.accesos.map(a => ({ a, u: resolveLink(a.enlace) })).filter(x => x.u); if (!qs.length) return '';
+      return `<section class="k-sec">${kTtl('Servicios en línea para ti')}<div class="wrap"><div class="k-car">${car(qs.map(({ a, u }, k) => `<a class="k-lay k-lay-s" ${linkAttrs(u)} style="--kt:${K_TONOS[k % 4]}"><span class="k-lay-p k-lay-i">${ic(a.icono)}</span><span class="k-lay-l"><span class="k-lay-n"><b>${esc(a.titulo)}</b></span><em>${esc(a.texto || 'Ingresar')} ›</em></span></a>`), 'Servicios en línea')}</div></div></section>`; },
+    eventos: () => { const ev = P('eventos').filter(e => isPub(e) && new Date(e.fecha) >= new Date(new Date().toDateString())).sort((a, b) => new Date(a.fecha) - new Date(b.fecha)).slice(0, 3); if (!ev.length) return '';
+      return `<section class="k-sec k-gray"><div class="wrap"><h2 class="k-ttl k-left"><small>Nuestros</small>Próximos eventos</h2><div class="k-ev">${ev.map(e => { const d = new Date(e.fecha); return `<article><img src="${img(e.imagen, 'ph:campus:2')}" alt="" loading="lazy"><h3>${esc(e.titulo)}</h3><p>${ic('calendar')}${fdate(e.fecha)}</p><p>${ic('clock')}${pad(d.getHours())}:${pad(d.getMinutes())} h</p>${e.lugar ? `<p>${ic('map')}${esc(e.lugar)}</p>` : ''}<a class="k-pill k-pill-d" href="#/eventos">Más información ❯</a></article>`; }).join('')}</div>
+        <a class="k-wide" href="#/eventos">Ver todos los eventos aquí ❯</a></div></section>`; },
+    noticias: () => { const ns = pubNews().slice(0, newsCount()); return `<section class="k-sec">${kTtl('Noticias para tu éxito')}<div class="wrap">${ns.length ? newsWrap(ns.map(n => `<article class="k-nc"><img src="${img(n.imagen, 'ph:campus:4')}" data-fit="${newsImageFit(n)}" alt="" loading="lazy"><div><time datetime="${esc(n.fecha)}">${fdate(n.fecha)}</time><h3><a href="#/noticias/${esc(n.slug)}">${esc(n.titulo)}</a></h3><span class="k-cat">${esc((P('categoriasNoticia').find(c => c.id === n.categoriaId) || {}).nombre || 'Noticias')}</span></div></article>`), h2 => `<div class="k-news">${h2}</div>`, 'tarjetas', 'k-ncar') : emptyMsg('noticias')}<a class="k-wide" href="#/noticias">Más noticias ❯</a></div></section>`; },
+    bienvenida: () => { const pr = page('presentacion'); if (!pr || !isPub(pr)) return ''; const tx = pr.contenido.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+      return `<section class="k-promo"><div class="wrap k-2"><div><h2 class="k-ttl k-left k-big">Mensaje de la Dirección General</h2><p class="k-lead">${esc(fullName(dir))}</p><p class="k-acc">${esc(dirJ.cargo || 'Dirección General')}</p><p>${esc(clamp(tx, 260))}</p><a class="k-pill" href="#/nosotros/presentacion">Más información ❯</a></div>
+        <div class="k-circles" aria-hidden="true"><i class="k-ring r1"></i><i class="k-ring r2"></i><i class="k-dot"></i><span class="k-c1"><img src="${img(dir && dir.foto)}" alt=""></span><span class="k-c2"><img src="${img(loc && loc.foto || pics[0])}" alt=""></span><span class="k-tag">${esc(i.lema || i.slogan || i.nombreCorto)}</span></div></div></section>`; },
+    cifras: () => { const cs = h.cifras.filter(x => String(cifra(x.valor)).trim()); if (!cs.length) return '';
+      return `<section class="k-nums" aria-label="Cifras institucionales"><div class="wrap k-ng">${cs.map(x => `<div class="cif${cifLink(x) ? ' cif-a' : ''}"><b>${cifNum(cifra(x.valor))}</b><span>${esc(x.label)}</span><small>Corte ${esc(x.corte)}</small>${cifA(x)}</div>`).join('')}</div></section>`; },
+    jerarquica: () => { const js = sortO(P('jerarquica').filter(isPub)).map(j => ({ j, p: persona(j.personaId) })).filter(x => x.p); if (!js.length) return '';
+      return `<section class="k-sec">${kTtl('Nuestro equipo directivo')}<div class="wrap"><div class="k-car">${car(js.map(({ j, p }, k) => lay('#/nosotros/plana-jerarquica', p.foto, 'user', fullName(p), k, j.cargo)), 'Plana jerárquica')}</div></div></section>`; },
+    testimonios: () => { const es = P('egresados').filter(isPub).slice(0, 3); if (!es.length) return '';
+      return `<section class="k-sec k-gray">${kTtl('Lo que dicen nuestros egresados')}<div class="wrap k-news">${es.map(e => `<figure class="k-nc k-q"><img src="${img(e.foto)}" alt="" loading="lazy"><figcaption><q>${esc(clamp(e.testimonio || '', 160))}</q><b>${esc(e.nombres)}</b><span class="k-cat">${esc((progById(e.programaId) || {}).nombre || '')}</span></figcaption></figure>`).join('')}</div></section>`; },
+    enlaces: () => { const all = coll('enlaces').filter(l => !l.deleted && ext(l.id)); let ls = all.filter(l => l.grupo === 'minedu'); if (!ls.length) ls = all.filter(l => l.grupo === 'Institucional' && l.id !== 'web'); if (!ls.length) return '';
+      return `<section class="k-sec k-gray">${kTtl('Plataformas del Estado')}<div class="wrap k-logos">${ls.map(l => `<a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer"><b>${esc((l.id.length <= 10 ? l.id : l.nombre.split(/\s+/)[0]).toUpperCase())}</b><small>${esc(l.nombre)}</small><span class="sr-only"> (se abre en una pestaña nueva)</span></a>`).join('')}</div></section>`; },
+  });
+}
+function bannerHTML(b, slim = false) {
+  /* En los servicios en línea (formularios) el banner es bajo para que el formulario quede a la vista. */
+  /* Sin fotografía propia (solo el logo) el banner es liso, con el sello institucional a la derecha. */
   const photo = b.img || (DB.locales || []).find(l => isPub(l))?.foto;
   const hasPhoto = photo && photo !== inst().logo;
-  return `<section class="page-banner ${hasPhoto ? '' : 'banner-plain'}" aria-label="Banner de la sección">${hasPhoto ? `<img class="bg" src="${img(photo)}" alt="" decoding="async">` : ''}<div class="wrap">${b.kicker ? `<div class="kicker">${esc(b.kicker)}</div>` : ''}<p class="ttl" aria-hidden="true">${esc(b.title)}</p>${b.text ? `<p>${esc(b.text)}</p>` : ''}${!hasPhoto ? `<img class="section-seal" src="${logoSrc()}" alt="" aria-hidden="true">` : ''}</div></section>`;
+  return `<section class="page-banner${slim ? ' slim' : ''}${hasPhoto ? '' : ' banner-plain'}" aria-label="Banner de la sección">${hasPhoto ? `<img class="bg" src="${img(photo)}" alt="" decoding="async">` : ''}<div class="wrap">${b.kicker ? `<div class="kicker">${esc(b.kicker)}</div>` : ''}<p class="ttl" aria-hidden="true">${esc(b.title)}</p>${b.text ? `<p>${esc(b.text)}</p>` : ''}${!hasPhoto ? `<img class="section-seal" src="${logoSrc()}" alt="" aria-hidden="true">` : ''}</div></section>`;
 }
 function crumbsHTML(cr) {
   return `<nav class="crumbs" aria-label="Ruta de navegación"><div class="wrap"><ol><li><a href="#/">${ic('home').replace('<svg', '<svg style="width:14px;height:14px;vertical-align:-2px;stroke:currentColor;fill:none;stroke-width:2"')} Inicio</a></li>${cr.map((c, i) => i === cr.length - 1 ? `<li aria-current="page">${esc(c[0])}</li>` : `<li><a href="${c[1]}">${esc(c[0])}</a></li>`).join('')}</ol></div></nav>`;
@@ -695,7 +1045,7 @@ function setSEO({ title, desc, crumbs = [], jsonld = [] }) {
   setMeta('meta[name="description"]', 'content', desc || s.descripcion);
   setMeta('meta[property="og:title"]', 'content', document.title);
   setMeta('meta[property="og:description"]', 'content', desc || s.descripcion);
-  const org = { '@context': 'https://schema.org', '@type': 'EducationalOrganization', name: inst().nombre, alternateName: inst().nombreCorto, foundingDate: inst().fechaCreacion, email: inst().correo, telephone: inst().telefono, address: { '@type': 'PostalAddress', streetAddress: inst().direccion, addressLocality: 'Pisco', addressRegion: 'Ica', addressCountry: 'PE' }, sameAs: Object.values(DB.config.redes).filter(Boolean) };
+  const org = { '@context': 'https://schema.org', '@type': 'EducationalOrganization', name: inst().nombre, alternateName: inst().nombreCorto, foundingDate: inst().fechaCreacion, email: inst().correo, telephone: inst().telefono, address: { '@type': 'PostalAddress', streetAddress: inst().direccion, addressLocality: [inst().distrito, inst().region].filter(Boolean).join(', ') || undefined, addressRegion: inst().region || undefined, addressCountry: 'PE' }, sameAs: Object.values(DB.config.redes).filter(Boolean) };
   const bc = { '@context': 'https://schema.org', '@type': 'BreadcrumbList', itemListElement: [{ '@type': 'ListItem', position: 1, name: 'Inicio', item: location.origin + location.pathname + '#/' }].concat(crumbs.map((c, i) => ({ '@type': 'ListItem', position: i + 2, name: c[0], item: c[1] ? location.origin + location.pathname + c[1] : undefined }))) };
   let el = document.getElementById('jsonld'); if (!el) { el = document.createElement('script'); el.type = 'application/ld+json'; el.id = 'jsonld'; document.head.appendChild(el); }
   el.textContent = JSON.stringify([org, bc].concat(jsonld));
@@ -706,7 +1056,7 @@ function shell(path, { title, desc, crumbs = [], banner, side = null, body, layo
   setSEO({ title, desc, crumbs, jsonld });
   const main = `<div class="content">${body}</div>`;
   const cls = side === null ? 'full' : layout === 'left' ? 'left' : '';
-  return `${headerHTML(path)}${banner ? bannerHTML(banner) : ''}${crumbs.length ? crumbsHTML(crumbs) : ''}<main id="contenido" tabindex="-1"><div class="wrap layout ${cls}" style="padding-left:16px;padding-right:16px">${layout === 'left' && side !== null ? `<aside>${side}</aside>${main}` : main + (side !== null ? `<aside aria-label="Información complementaria">${side}</aside>` : '')}</div></main>${footerHTML()}`;
+  return `${headerHTML(path)}${banner ? bannerHTML(banner, /^servicios\//.test(Array.isArray(path) ? path.join('/') : String(path || ''))) : ''}${crumbs.length ? crumbsHTML(crumbs) : ''}<main id="contenido" tabindex="-1"><div class="wrap layout ${cls}" style="padding-left:16px;padding-right:16px">${layout === 'left' && side !== null ? `<aside>${side}</aside>${main}` : main + (side !== null ? `<aside aria-label="Información complementaria">${side}</aside>` : '')}</div></main>${footerHTML()}`;
 }
 const emptyMsg = (what = 'registros') => `<div class="empty" role="status">Sin ${what} publicados al ${fshort(new Date())}.</div>`;
 
@@ -719,23 +1069,66 @@ R('', path => {
   const c = DB.config, h = c.home; const i = inst();
   setSEO({ title: '', desc: c.seo.descripcion });
   const blocks = {
-    slider: () => { const sl = sortO(P('slides').filter(isPub)); if (!sl.length) return ''; return `<section class="hero" aria-roledescription="carrusel" aria-label="Destacados">${sl.map((s, k) => `<div class="slide ${k ? '' : 'on'}" role="group" aria-roledescription="diapositiva" aria-label="${k + 1} de ${sl.length}">${k ? `<img data-src="${img(s.imagen)}" alt="" decoding="async">` : `<img src="${img(s.imagen)}" alt="" fetchpriority="high">`}<div class="cap"><div class="wrap"><span class="hero-kicker">${ic('grad')} ${esc(inst().nombreCorto)}</span><h2>${esc(s.titulo)}</h2><p>${esc(s.texto)}</p>${s.boton && resolveLink(s.enlace) ? `<a class="btn gold" ${linkAttrs(resolveLink(s.enlace))}>${esc(s.boton)} ${ic('arrow').replace('<svg', '<svg style="width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2"')}</a>` : ''}</div></div></div>`).join('')}${sl.length > 1 ? `<button class="hero-arrow l" data-sl="-1" aria-label="Diapositiva anterior">‹</button><button class="hero-arrow r" data-sl="1" aria-label="Diapositiva siguiente">›</button><div class="hero-dots">${sl.map((_, k) => `<button data-dot="${k}" aria-label="Ir a diapositiva ${k + 1}" aria-current="${k === 0}"></button>`).join('')}</div>` : ''}</section>`; },
-    accesos: () => `<section class="wrap quick" aria-label="Accesos rápidos"><div class="grid g4">${h.accesos.map(a => { const u = resolveLink(a.enlace); return u ? `<a ${linkAttrs(u)}><span class="ic">${ic(a.icono)}</span><span><strong>${esc(a.titulo)}</strong><small>${esc(a.texto)}</small></span></a>` : ''; }).join('')}</div></section>`,
+    slider: () => { const sl = sortO(P('slides').filter(isPub)); if (!sl.length) return ''; return `<section class="hero" aria-roledescription="carrusel" aria-label="Destacados">${sl.map((s, k) => {
+      // «Solo imagen»: afiche con su propio texto (sin título, texto ni oscurecido). Ajuste '' = automático según la forma de la imagen.
+      const solo = s.modo === 'imagen', aj = solo ? 'contain' : (s.ajuste || 'auto'), fit = aj === 'contain'; const pos = { left: '0% 50%', right: '100% 50%', top: '50% 0%', bottom: '50% 100%' }[s.enfoque] || '50% 50%'; const st = `style="object-position:${pos}"`;
+      const src = () => k ? `data-src="${img(s.imagen)}"` : `src="${img(s.imagen)}"`;
+      const alt = solo ? esc(s.titulo) : '';
+      const im = cls => k ? `<img class="${cls}" data-src="${img(s.imagen)}" alt="${alt}" decoding="async" ${st}>` : `<img class="${cls}" src="${img(s.imagen)}" alt="${alt}" fetchpriority="high" ${st}>`;
+      const link = resolveLink(s.enlace);
+      const cap = solo ? (link ? `<a class="sl-link" ${linkAttrs(link)} aria-label="${esc(s.titulo)}"></a>` : '') : `<div class="cap"><div class="wrap"><span class="hero-kicker">${ic('grad')} ${esc(inst().nombreCorto)}</span><h2>${esc(s.titulo)}</h2><p>${esc(s.texto)}</p>${s.boton && link ? `<a class="btn gold" ${linkAttrs(link)}>${esc(s.boton)} ${ic('arrow').replace('<svg', '<svg style="width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2"')}</a>` : ''}</div></div>`;
+      return `<div class="slide ${k ? '' : 'on'}${fit ? ' sl-contain' : ''}${aj === 'auto' ? ' sl-auto' : ''}${solo ? ' sl-solo' : ''}${s.capa ? ' capa-' + esc(s.capa) : ''}${s.realce === 'no' ? '' : ' sl-realce'}" role="group" aria-roledescription="diapositiva" aria-label="${k + 1} de ${sl.length}">${fit || aj === 'auto' ? `<img class="sl-blur" ${src()} alt="" aria-hidden="true">` : ''}${im('sl-img')}${cap}</div>`; }).join('')}${sl.length > 1 ? `<button class="hero-arrow l" data-sl="-1" aria-label="Diapositiva anterior">‹</button><button class="hero-arrow r" data-sl="1" aria-label="Diapositiva siguiente">›</button><div class="hero-dots">${sl.map((_, k) => `<button data-dot="${k}" aria-label="Ir a diapositiva ${k + 1}" aria-current="${k === 0}"></button>`).join('')}</div>` : ''}</section>`; },
+    accesos: () => { const qs = h.accesos.map(a => { const u = resolveLink(a.enlace); return u ? `<a ${linkAttrs(u)}><span class="ic">${ic(a.icono)}</span><span><strong>${esc(a.titulo)}</strong><small>${esc(a.texto)}</small></span></a>` : ''; }).filter(Boolean); return `<section class="wrap quick" aria-label="Accesos rápidos"><div class="grid ${qs.length > 4 ? 'g3 q-many' : 'g4'}">${qs.join('')}</div></section>`; },
     bienvenida: () => { const pr = page('presentacion'); const dir = persona((P('jerarquica').find(j => j.esDirector) || {}).personaId); if (!pr || !isPub(pr)) return ''; const ps = (pr.contenido.match(/<p>[\s\S]*?<\/p>/g) || []).slice(0, 2).join(''); return `<section class="sec"><div class="wrap welcome"><img src="${img(dir && dir.foto)}" alt="Fotografía de ${esc(fullName(dir))}" loading="lazy"><div><div class="sec-h" style="text-align:left;margin:0 0 10px"><span class="kicker">Bienvenida</span><h2>Mensaje de la Dirección General</h2></div><div class="prose">${sanitize(ps)}</div><p><strong>${esc(fullName(dir))}</strong><br><span style="color:var(--muted)">${esc((P('jerarquica').find(j => j.esDirector) || {}).cargo || '')}</span></p><a class="btn" href="#/nosotros/presentacion">Leer presentación completa</a></div></div></section>`; },
-    cifras: () => `<section class="sec stats" aria-label="Cifras institucionales"><div class="wrap grid g4">${h.cifras.map((x, k) => `<div class="stat"><span class="st-ic">${ic(['calendar', 'grad', 'users', 'award', 'star', 'building'][k % 6])}</span><b>${esc(cifra(x.valor))}</b><span>${esc(x.label)}</span><small>Corte: ${esc(x.corte)}</small></div>`).join('')}</div></section>`,
-    programas: () => `<section class="sec alt"><div class="wrap"><div class="sec-h"><span class="kicker">Oferta formativa</span><h2>Programas de estudio</h2><p>Formación profesional técnica de 3 años con título a nombre de la Nación.</p></div><div class="grid g4">${progs().map(p => progCard(p)).join('')}</div></div></section>`,
-    noticias: () => { const ns = pubNews().slice(0, 6); return `<section class="sec"><div class="wrap"><div class="sec-h"><span class="kicker">Actualidad</span><h2>Noticias recientes</h2></div>${ns.length ? `<div class="grid g3">${ns.map(newsCard).join('')}</div><p style="text-align:center;margin-top:22px"><a class="btn sec" href="#/noticias">Ver todas las noticias</a></p>` : emptyMsg('noticias')}</div></section>`; },
+    cifras: () => `<section class="sec stats" aria-label="Cifras institucionales"><div class="wrap grid g4 stats-n${Math.min(h.cifras.length, 4)}">${h.cifras.map((x, k) => `<div class="stat cif${cifLink(x) ? ' cif-a' : ''}"><span class="st-ic">${ic(['calendar', 'grad', 'users', 'award', 'star', 'building'][k % 6])}</span><b>${cifNum(cifra(x.valor))}</b><span>${esc(x.label)}</span><small>Corte: ${esc(x.corte)}</small>${cifA(x)}</div>`).join('')}</div></section>`,
+    programas: () => `<section class="sec alt"><div class="wrap"><div class="sec-h"><span class="kicker">Oferta formativa</span><h2>Programas de estudio</h2><p>Formación profesional técnica de 3 años con título a nombre de la Nación.</p></div>${progList(progs())}</div></section>`,
+    noticias: () => { const ns = pubNews().slice(0, newsCount('tarjetas', 6)); return `<section class="sec"><div class="wrap"><div class="sec-h"><span class="kicker">Actualidad</span><h2>Noticias recientes</h2></div>${ns.length ? `${newsWrap(ns.map(newsCard), h => `<div class="grid g3">${h}</div>`)}<p style="text-align:center;margin-top:22px"><a class="btn sec" href="#/noticias">Ver todas las noticias</a></p>` : emptyMsg('noticias')}</div></section>`; },
     beneficios: () => `<section class="sec alt"><div class="wrap"><div class="sec-h"><span class="kicker">Ventajas</span><h2>¿Por qué estudiar en el ${esc(i.nombreCorto)}?</h2></div><div class="grid g4">${h.beneficios.slice(0, 8).map(b => `<div class="card benefit"><span class="ic">${ic(b.i)}</span><div><h3>${esc(b.t)}</h3><p>${esc(b.d)}</p></div></div>`).join('')}</div></div></section>`,
     jerarquica: () => { const js = sortO(P('jerarquica').filter(isPub)).map(j => ({ j, p: persona(j.personaId) })).filter(x => x.p); return js.length ? `<section class="sec"><div class="wrap"><div class="sec-h"><span class="kicker">Equipo directivo</span><h2>Plana jerárquica</h2></div><div class="people-strip">${js.slice(0, 6).map(({ j, p }) => `<div class="person"><img src="${img(p.foto)}" alt="Fotografía de ${esc(fullName(p))}" loading="lazy"><strong>${esc(fullName(p))}</strong><small>${esc(j.cargo)}</small></div>`).join('')}</div><p style="text-align:center;margin-top:18px"><a class="btn sec" href="#/nosotros/plana-jerarquica">Conocer al equipo</a></p></div></section>` : ''; },
     testimonios: () => { const es = P('egresados').filter(isPub).slice(0, 3); return es.length ? `<section class="sec alt"><div class="wrap"><div class="sec-h"><span class="kicker">Egresados</span><h2>Lo que dicen nuestros egresados</h2></div><div class="grid g3">${es.map(e => `<figure class="card testi"><blockquote>“${esc(e.testimonio)}”</blockquote><figcaption class="who"><img src="${img(e.foto)}" alt="" loading="lazy"><div><strong>${esc(e.nombres)}</strong><br><small>${esc((progById(e.programaId) || {}).nombre || '')} · Promoción ${esc(e.anio)}</small></div></figcaption></figure>`).join('')}</div></div></section>` : ''; },
     eventos: () => { const ev = P('eventos').filter(e => isPub(e) && new Date(e.fecha) >= new Date(new Date().toDateString())).sort((a, b) => new Date(a.fecha) - new Date(b.fecha)).slice(0, 3); return ev.length ? `<section class="sec"><div class="wrap"><div class="sec-h"><span class="kicker">Agenda</span><h2>Próximos eventos</h2></div><div class="grid g3">${ev.map(eventCard).join('')}</div><p style="text-align:center;margin-top:18px"><a class="btn sec" href="#/eventos">Ver agenda completa</a></p></div></section>` : ''; },
     enlaces: () => `<section class="sec alt"><div class="wrap"><div class="sec-h"><span class="kicker">Plataformas del Estado</span><h2>Enlaces institucionales</h2></div>${mineduLinks()}</div></section>`,
   };
-  const body = h.bloques.filter(b => b.on && blocks[b.k]).map(b => blocks[b.k]()).join('');
+  const B = isUni() ? uniBlocks(blocks, h, i) : isImp() ? impBlocks(blocks, h, i) : isHor() ? horBlocks(blocks, h, i) : isCam() ? camBlocks(blocks, h, i) : blocks;
+  // «Horizonte»: el panel de oferta formativa va sobre la portada, como en el diseño de referencia; el resto conserva el orden configurado.
+  let order = h.bloques; if (isHor()) { const pr = order.find(b => b.k === 'programas' && b.on); if (pr && order.some(b => b.k === 'slider' && b.on)) { order = order.filter(b => b !== pr); order.splice(order.findIndex(b => b.k === 'slider') + 1, 0, pr); } }
+  const body = order.filter(b => b.on && B[b.k]).map(b => B[b.k]()).join('');
   const admission = admVigente();
   const announcement = admission ? `<p class="home-announcement">Admisión ${esc(admission.anio)} · ${esc(admission.subtitulo || 'Consulta nuestros programas de estudio')}</p>` : '';
   return `${announcement}${headerHTML(path)}<main id="contenido" tabindex="-1"><h1 class="sr-only">${esc(inst().nombre)} – Portal institucional</h1>${body}</main>${footerHTML()}`;
 });
+/* Cifras interactivas: número que cuenta al aparecer, enlace a su página y texto completo para lectores de pantalla */
+function cifLink(x) {
+  const e = String(x.enlace || '').trim(); if (e) return resolveLink(e) || '';
+  const v = String(x.valor || ''), l = String(x.label || '').toLowerCase();
+  if (v === 'auto:anios' || /a[ñn]os|creaci|fundaci|historia/.test(l)) return '#/nosotros/resena-historica';
+  if (v === 'auto:programas' || /programa|carrera/.test(l)) return '#/programas';
+  if (/estudiante|alumno|postulante|ingresante|vacante|admisi/.test(l)) return '#/admision';
+  if (/matricul/.test(l)) return '#/matricula';
+  if (v === 'auto:egresados' || v === 'auto:titulados' || /egresad|titulad|docente|estad/.test(l)) return '#/transparencia/estadisticas';
+  return '';
+}
+function cifNum(v) {
+  const t = String(v); const m = t.match(/^(\D*?)(\d[\d.,\s]*\d|\d)(\D*)$/);
+  if (!m) return esc(t);
+  const raw = m[2]; if (!/^\d{1,3}(?:([.,\s])\d{3}(?:\1\d{3})*)?$/.test(raw) && !/^\d+$/.test(raw)) return esc(t);
+  const sep = (raw.match(/[.,\s](?=\d{3}(?:\D|$))/) || [''])[0]; const n = +raw.replace(/[.,\s]/g, '');
+  if (!isFinite(n)) return esc(t);
+  const from = /^(19|20)\d{2}$/.test(raw) ? n - 40 : 0;
+  return `<span class="sr-only">${esc(t)}</span><span class="cif-n" aria-hidden="true" data-count="${n}" data-from="${from}" data-pre="${esc(m[1])}" data-suf="${esc(m[3])}" data-sep="${esc(sep)}" style="min-width:${t.length}ch">${esc(t)}</span>`;
+}
+const cifA = (x, extra = '') => { const u = cifLink(x); return u ? `<a class="cif-link" ${linkAttrs(u)} aria-label="${esc(cifra(x.valor) + ' ' + x.label)}: ver más${extra}"></a>` : ''; };
+function cifInit(root = document) {
+  const els = $$('.cif-n:not([data-cif])', root); if (!els.length) return;
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches || PREVIEW;
+  const fmt = (el, n) => { let s = String(Math.round(n)); if (el.dataset.sep) s = s.replace(/\B(?=(\d{3})+(?!\d))/g, el.dataset.sep); return el.dataset.pre + s + el.dataset.suf; };
+  const run = (el, delay) => { const to = +el.dataset.count, from = +el.dataset.from, box = el.closest('.cif'); if (reduce) { el.textContent = fmt(el, to); box && box.classList.add('cif-done'); return; }
+    el.textContent = fmt(el, from); setTimeout(() => { const t0 = performance.now(), d = 1500; const step = now => { const k = Math.min(1, (now - t0) / d); el.textContent = fmt(el, from + (to - from) * (1 - Math.pow(1 - k, 3))); if (k < 1) requestAnimationFrame(step); else { el.textContent = fmt(el, to); box && box.classList.add('cif-done'); } }; requestAnimationFrame(step); }, delay); };
+  els.forEach(el => { el.dataset.cif = '1'; if (!reduce) el.textContent = fmt(el, +el.dataset.from); });
+  if (!('IntersectionObserver' in window)) { els.forEach((el, k) => run(el, k * 150)); return; }
+  const io = new IntersectionObserver(es => es.forEach(e => { if (!e.isIntersecting) return; io.unobserve(e.target); const grp = $$('.cif-n', e.target.closest('section') || document); run(e.target, Math.max(0, grp.indexOf(e.target)) * 150); }), { threshold: .4 });
+  els.forEach(el => io.observe(el));
+}
 function cifra(v) {
   if (!String(v).startsWith('auto:')) return v;
   const k = v.slice(5); const st = coll('estadisticas'); const y = Math.max(...st.map(s => s.anio));
@@ -747,8 +1140,20 @@ function cifra(v) {
   return v;
 }
 const progCard = p => `<article class="card pcard"><img src="${img(p.imagen)}" alt="" loading="lazy"><div class="cb"><h3><a href="#/programas/${esc(p.slug)}" style="color:inherit;text-decoration:none">${esc(p.nombre)}</a></h3><p>${esc(p.resumen)}</p><a class="more" href="#/programas/${esc(p.slug)}" aria-label="Ver programa ${esc(p.nombre)}">Ver programa →</a></div></article>`;
+const progView = () => DB.config.home.programasVista === 'grid' ? 'grid' : 'carrusel';
+const progList = ps => progView() === 'carrusel' && ps.length > 1
+  ? `<div class="pcar" data-pcar><button type="button" class="pcar-b prev" data-pcar-b="-1" aria-label="Programas anteriores">‹</button><div class="pcar-t" tabindex="0" role="region" aria-label="Programas de estudio (desplázate para ver más)">${ps.map(p => `<div class="pcar-i">${progCard(p)}</div>`).join('')}</div><button type="button" class="pcar-b next" data-pcar-b="1" aria-label="Programas siguientes">›</button></div>`
+  : `<div class="grid g4">${ps.map(progCard).join('')}</div>`;
+/* Noticias de la portada: «tarjetas» (cuadrícula) o «carrusel»; vacío = lo propio de cada diseño */
+const newsView = (def = 'tarjetas') => ['tarjetas', 'carrusel'].includes(DB.config.home.noticiasVista) ? DB.config.home.noticiasVista : def;
+const newsCount = (def = 'tarjetas', grid = 3) => newsView(def) === 'carrusel' ? 9 : grid;
+const newsWrap = (cards, gridHTML, def = 'tarjetas', cls = '') => newsView(def) === 'carrusel' && cards.length > 1
+  ? `<div class="pcar pcar-news ${cls}" data-pcar><button type="button" class="pcar-b prev" data-pcar-b="-1" aria-label="Noticias anteriores">‹</button><div class="pcar-t" tabindex="0" role="region" aria-label="Noticias (desplázate para ver más)">${cards.map(c => `<div class="pcar-i">${c}</div>`).join('')}</div><button type="button" class="pcar-b next" data-pcar-b="1" aria-label="Noticias siguientes">›</button></div>`
+  : gridHTML(cards.join(''));
+const NEWS_FOTOS = ['imagen', 'foto2', 'foto3', 'foto4', 'foto5'];
+const newsFotos = n => NEWS_FOTOS.map(k => n[k]).filter(Boolean);
 const newsImageFit = n => ['cover','contain'].includes(n.imagenAjuste) ? n.imagenAjuste : /(?:logo|cuadro|resultado|comunicado)/i.test(n.imagen || '') ? 'contain' : 'cover';
-const newsCard = n => `<article class="card ncard"><div class="img"><img src="${img(n.imagen, 'ph:campus:4')}" data-fit="${newsImageFit(n)}" alt="${esc(n.titulo)}" loading="lazy" decoding="async" width="640" height="400">${n.destacada ? '<span class="badge">Destacado</span>' : ''}</div><div class="cb"><div class="meta"><time datetime="${esc(n.fecha)}">${fdate(n.fecha)}</time><span class="badge">${esc(catName(n.categoriaId))}</span></div><h3><a href="#/noticias/${esc(n.slug)}">${esc(n.titulo)}</a></h3><p>${esc(clamp(n.resumen, 140))}</p><a class="more" href="#/noticias/${esc(n.slug)}" aria-label="Ver más: ${esc(n.titulo)}">Ver más →</a></div></article>`;
+const newsCard = n => `<article class="card ncard"><div class="img"><img src="${img(n.imagen, 'ph:campus:4')}" data-fit="${newsImageFit(n)}" alt="${esc(n.titulo)}" loading="lazy" decoding="async" width="640" height="400">${n.destacada ? '<span class="badge">Destacado</span>' : ''}${newsFotos(n).length > 1 ? `<span class="badge nfotos">${ic('image')} ${newsFotos(n).length} fotos</span>` : ''}</div><div class="cb"><div class="meta"><time datetime="${esc(n.fecha)}">${fdate(n.fecha)}</time><span class="badge">${esc(catName(n.categoriaId))}</span></div><h3><a href="#/noticias/${esc(n.slug)}">${esc(n.titulo)}</a></h3><p>${esc(clamp(n.resumen, 140))}</p><a class="more" href="#/noticias/${esc(n.slug)}" aria-label="Ver más: ${esc(n.titulo)}">Ver más →</a></div></article>`;
 const eventCard = e => { const d = new Date(e.fecha); return `<article class="card event"><div class="d"><b>${d.getDate()}</b><small>${MES3[d.getMonth()]} ${d.getFullYear()}</small></div><div><h3>${esc(e.titulo)}</h3><p><time datetime="${esc(e.fecha)}">${pad(d.getHours())}:${pad(d.getMinutes())} h</time> · ${esc(e.lugar)}</p><p>${esc(e.descripcion)}</p></div></article>`; };
 function mineduLinks() {
   return `<div class="minedu-links">${coll('enlaces').filter(l => l.grupo === 'minedu' && ext(l.id)).map(l => `<a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer"><span class="lg" style="background:${esc(l.color || '#1556b8')}">${esc(l.nombre.split(' ')[0].slice(0, 3).toUpperCase())}</span><span>${esc(l.nombre)}<span class="sr-only"> (se abre en una pestaña nueva)</span></span></a>`).join('')}</div>`;
@@ -910,7 +1315,7 @@ function bindContactForm() {
     const m = { id: uid(), fecha: nowISO(), nombres: v.nombres.trim(), documento: v.documento, correo: v.correo.trim(), telefono: v.telefono, asunto: v.asunto, programa: v.programa, mensaje: v.mensaje.trim(), estado: 'Nuevo', historial: [] };
     coll('mensajes').unshift(m); audit('Registro', 'Mensajes de contacto', m.asunto, 'Mensaje recibido desde el portal'); mailOut(DB.config.correoContacto, 'Nuevo mensaje de contacto: ' + m.asunto, m.mensaje);
     if (!saveDB()) return;
-    f.reset(); modal({ title: 'Mensaje enviado', size: 'sm', body: `<div class="notice ok">Tu mensaje fue registrado correctamente. El envío por correo está pendiente de habilitación.</div>` });
+    f.reset(); renewCaptcha(f); modal({ title: 'Mensaje enviado', size: 'sm', body: `<div class="notice ok">Tu mensaje fue registrado correctamente. El envío por correo está pendiente de habilitación.</div>` });
   };
 }
 function mailOut(para, asunto, cuerpo) {
@@ -921,7 +1326,7 @@ function mailOut(para, asunto, cuerpo) {
 }
 
 /* ---------- PROGRAMAS ---------- */
-R('programas', path => shell(path, { title: 'Programas de Estudio', desc: 'Programas de estudio de educación superior tecnológica.', crumbs: [['Programas de Estudio']], banner: { kicker: 'Oferta formativa', title: 'Programas de Estudio', text: 'Elige tu carrera técnica y construye tu futuro profesional.' }, side: null, body: `<h1>Programas de Estudio</h1><p class="lead">Ofrecemos ${progs().length} programas de estudio de 3 años de duración, con título de Profesional Técnico a nombre de la Nación.</p><div class="grid g4">${progs().map(progCard).join('')}</div>` }));
+R('programas', path => shell(path, { title: 'Programas de Estudio', desc: 'Programas de estudio de educación superior tecnológica.', crumbs: [['Programas de Estudio']], banner: { kicker: 'Oferta formativa', title: 'Programas de Estudio', text: 'Elige tu carrera técnica y construye tu futuro profesional.' }, side: null, body: `<h1>Programas de Estudio</h1><p class="lead">Ofrecemos ${progs().length} programas de estudio de 3 años de duración, con título de Profesional Técnico a nombre de la Nación.</p>${progList(progs())}` }));
 R('programas/:slug', (path, q, prm) => {
   const p = progs().find(x => x.slug === prm.slug) || (PREVIEW && PREVIEW.coll === 'programas' && P('programas').find(x => x.slug === prm.slug && x._preview));
   if (!p) return notFound(path);
@@ -1015,6 +1420,7 @@ R('becas', (path, q) => {
         if (s) rows = rows.filter(b => /^\d+$/.test(s) ? b.dni === s : normTitle(b.apellidos + ' ' + b.nombres).includes(s) || normTitle(b.nombres + ' ' + b.apellidos).includes(s));
         rows.sort((a, b) => a.apellidos.localeCompare(b.apellidos));
         const tot = rows.length; const pg = rows.slice((BST.page - 1) * BST.size, BST.page * BST.size);
+        if (!v.anio) { $('#bres').innerHTML = '<p class="notice" role="status">Aún no hay periodos de becas publicados. Cuando la institución registre un periodo, aquí podrá consultar a los beneficiarios.</p>'; return; }
         const perLabel = `${v.anio}${v.periodo ? ' - ' + v.periodo : ''}`;
         $('#bres').innerHTML = tot ? `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px"><p style="margin:0" role="status">Mostrando resultados de <b>${esc(perLabel)}</b> <span class="badge">${tot} beneficiario(s) encontrado(s)</span></p><button class="btn sm sec" data-pdf>${ic('download').replace('<svg', '<svg style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2"')} Exportar PDF</button></div><div class="tbl-wrap"><table class="tbl"><thead><tr><th class="c">N.º</th><th>Apellidos y nombres</th><th>Programa de estudio</th><th>Periodo</th><th>Tipo de beca</th></tr></thead><tbody>${pg.map((b, i) => { const per = coll('becasPeriodos').find(x => x.id === b.periodoId); const t = coll('tiposBeca').find(x => x.id === b.tipoId); return `<tr><td class="c">${(BST.page - 1) * BST.size + i + 1}</td><td>${esc(b.apellidos + ', ' + b.nombres)}</td><td>${esc((progById(b.programaId) || {}).nombre || '')}</td><td>${per ? per.anio + ' - ' + per.periodo : ''}</td><td>${esc(t ? t.nombre : '')}${b.motivo ? `<br><small style="color:var(--muted)">${esc(b.motivo)}</small>` : ''}</td></tr>`; }).join('')}</tbody></table></div>${pager(tot, BST.page, BST.size)}` : `<div class="empty" role="status">No se encontraron beneficiarios para <b>${esc(perLabel)}</b> con los filtros seleccionados.</div>`;
         bindPager($('#bres'), BST, run);
@@ -1122,8 +1528,8 @@ function bindReclamo() {
       codigo = r.codigo; // se guarda antes de confirmar
     r.notifInst = mailOut(DB.config.correoReclamos, `[${codigo}] Nuevo ${v.tipo.toLowerCase()} registrado`, `${r.nombres} - ${r.asunto}: ${r.descripcion}`);
     r.notifUser = mailOut(r.correo, `Constancia de registro ${codigo}`, `Su ${v.tipo.toLowerCase()} fue registrado el ${fshort(fecha, true)} con el código ${codigo}.`);
-    audit('Registro', 'Libro de reclamaciones', codigo, `${v.tipo} registrado desde el portal. Notificación institucional: ${r.notifInst}`); saveDB();
-    f.reset(); $$('[data-c]', f).forEach(c => c.textContent = '0');
+    audit('Registro', 'Libro de reclamaciones', codigo, `${v.tipo} ${v.tipo === 'Queja' ? 'registrada' : 'registrado'} desde el portal. Notificación institucional: ${r.notifInst}`); saveDB();
+    f.reset(); renewCaptcha(f); $$('[data-c]', f).forEach(c => c.textContent = '0');
     const m = modal({ title: 'Reclamación registrada', body: `<div class="notice ok">Tu ${esc(v.tipo.toLowerCase())} fue registrado correctamente el ${fdate(fecha, true)}.</div><p>Tu código de seguimiento es:</p><div class="code-box">${codigo}</div><p style="margin-top:12px">Puedes descargar tu constancia de recepción. El envío por correo está pendiente de habilitación. Guarda este código para consultar el estado de tu reclamación.</p>`, foot: `<button class="btn sec" data-print>${ic('print').replace('<svg', '<svg style="width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2"')} Descargar constancia</button><button class="btn" data-ok>Aceptar</button>` });
     $('[data-ok]', m.el).onclick = m.close;
     $('[data-print]', m.el).onclick = () => downloadBlob(makePdf('Constancia de registro - Libro de Reclamaciones', [`Codigo de seguimiento: ${codigo}`, `Fecha de registro: ${fshort(fecha, true)}`, `Tipo: ${r.tipo}`, `Reclamante: ${r.nombres}`, `Documento: ${r.tipoDoc} ${maskDni(r.numDoc)}`, `Asunto: ${r.asunto}`, '', 'Detalle:', r.descripcion, '', 'Pedido:', r.pedido], inst().nombre.toUpperCase()), `Constancia_${codigo}.pdf`);
@@ -1278,15 +1684,26 @@ R('noticias/:slug', (path, q, prm) => {
   const n = P('noticias').find(x => x.slug === prm.slug && newsVisible(x));
   if (!n) return notFound(path);
   const rel = pubNews().filter(x => x.id !== n.id && x.categoriaId === n.categoriaId).slice(0, 3);
-  const url = location.protocol === 'file:' ? 'https://www.iestppisco.edu.pe/' + location.hash : location.href;
+  const fotos = newsFotos(n);
+  const url = location.href;
   const body = `<article><header><div class="meta" style="display:flex;gap:10px;flex-wrap:wrap;color:var(--muted);font-size:13.5px"><time datetime="${esc(n.fecha)}">${fdate(n.fecha, true)}</time><span class="badge">${esc(catName(n.categoriaId))}</span></div><h1>${esc(n.titulo)}</h1><p class="lead">${esc(n.resumen)}</p></header>
-   ${n.video ? `<div style="aspect-ratio:16/9;margin-bottom:16px"><iframe src="${esc(n.video)}" title="Video: ${esc(n.titulo)}" style="width:100%;height:100%;border:0;border-radius:10px" allowfullscreen loading="lazy"></iframe></div>` : `<figure class="figure"><img src="${img(n.imagen, 'ph:campus:4')}" alt="Imagen de la noticia: ${esc(n.titulo)}" data-fit="${newsImageFit(n)}" decoding="async"><figcaption>${esc(n.titulo)}</figcaption></figure>`}
+   ${n.video ? `<div style="aspect-ratio:16/9;margin-bottom:16px"><iframe src="${esc(/^https:\/\//i.test(n.video) ? n.video : 'about:blank')}" title="Video: ${esc(n.titulo)}" style="width:100%;height:100%;border:0;border-radius:10px" allowfullscreen loading="lazy"></iframe></div>` : `<figure class="figure"><button type="button" class="ngal-main" aria-label="Ampliar la foto"><img src="${img(n.imagen, 'ph:campus:4')}" alt="Imagen de la noticia: ${esc(n.titulo)}" data-fit="${newsImageFit(n)}" decoding="async"></button><figcaption>${esc(n.titulo)}${fotos.length > 1 ? ` · Foto <span data-gal-n>1</span> de ${fotos.length}` : ''}</figcaption></figure>`}
+   ${fotos.length > 1 ? `<div class="ngal" aria-label="Galería de fotos de la noticia">${fotos.map((f, i) => `<button type="button" class="ngal-t${!n.video && !i ? ' on' : ''}" data-gal-t="${i}" aria-label="Ver foto ${i + 1} de ${fotos.length}"><img src="${img(f)}" alt="" loading="lazy" decoding="async"></button>`).join('')}</div>` : ''}
    <div class="prose">${sanitize(n.contenido)}</div>
    ${(n.adjuntos || []).length ? `<h2>Archivos relacionados</h2><ul>${n.adjuntos.filter(a => a.doc || a.data || a.titulo || a.url).map((a, i) => { const d = a.doc || a; return `<li><a href="#" data-adj="${i}">${esc(a.titulo || d.original || d.nombre)}</a> <small>(${fsize(d.size)})</small></li>`; }).join('')}</ul>` : ''}
    <p style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:18px"><b>Compartir:</b><a class="btn xs ghost" target="_blank" rel="noopener noreferrer" href="https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}">Facebook</a><a class="btn xs ghost" target="_blank" rel="noopener noreferrer" href="https://wa.me/?text=${encodeURIComponent(n.titulo + ' ' + url)}">WhatsApp</a><a class="btn xs ghost" href="#/noticias">← Volver a noticias</a></p></article>
    ${rel.length ? `<section><h2>Noticias relacionadas</h2><div class="grid g3">${rel.map(newsCard).join('')}</div></section>` : ''}`;
   const html = shell(path, { title: n.titulo, desc: n.resumen, crumbs: [['Noticias', '#/noticias'], [clamp(n.titulo, 50)]], banner: { title: 'Noticias', text: catName(n.categoriaId) }, side: `<section class="side-box"><h2>Últimas noticias</h2><ul>${pubNews().slice(0, 5).map(x => `<li><a href="#/noticias/${esc(x.slug)}">${esc(x.titulo)}</a></li>`).join('')}</ul></section>` + sideLinks(), body, jsonld: [{ '@context': 'https://schema.org', '@type': 'NewsArticle', headline: n.titulo, datePublished: n.fecha, dateModified: n.modEn || n.fecha, description: n.resumen, author: { '@type': 'Organization', name: inst().nombre }, publisher: { '@type': 'Organization', name: inst().nombre } }] });
-  return { html, after: () => $$('[data-adj]').forEach(a => a.onclick = e => { e.preventDefault(); const x = n.adjuntos.filter(a => a.doc || a.data || a.titulo || a.url)[+a.dataset.adj]; openDoc(x.doc || x); }) };
+  return { html, after: () => {
+    $$('[data-adj]').forEach(a => a.onclick = e => { e.preventDefault(); const x = n.adjuntos.filter(a => a.doc || a.data || a.titulo || a.url)[+a.dataset.adj]; openDoc(x.doc || x); });
+    const main = $('.ngal-main'); let cur = 0;
+    if (main && fotos.length) main.onclick = () => openGallery(fotos, cur, n.titulo);
+    $$('[data-gal-t]').forEach(b => b.onclick = () => {
+      const i = +b.dataset.galT; if (!main) return openGallery(fotos, i, n.titulo);
+      cur = i; const im = $('img', main); im.src = img(fotos[i]); im.dataset.fit = i ? 'cover' : newsImageFit(n);
+      $$('[data-gal-t]').forEach(t => t.classList.toggle('on', t === b)); const c = $('[data-gal-n]'); if (c) c.textContent = i + 1;
+    });
+  } };
 });
 R('eventos', path => {
   const today = new Date(new Date().toDateString());
@@ -1308,7 +1725,7 @@ R('mapa-del-sitio', path => {
   return { html: shell(path, { title: 'Mapa del sitio', crumbs: [['Mapa del sitio']], banner: { title: 'Mapa del sitio' }, side: null, body }), after: () => $('[data-sm]').onclick = downloadSitemap };
 });
 function downloadSitemap() {
-  const base = 'https://www.iestppisco.edu.pe';
+  const base = location.origin;
   const urls = ['/', '/programas', '/admision', '/matricula', '/becas', '/noticias', '/eventos', '/contacto', '/preguntas-frecuentes', '/mapa-del-sitio', '/servicios/mesa-de-partes', '/servicios/bolsa-laboral', '/servicios/consulta-certificados', '/servicios/complementarios'].concat(['presentacion', 'resena-historica', 'mision-vision', 'organizacion', 'reconocimientos', 'plana-jerarquica', 'plana-docente', 'campus-e-informes'].map(s => '/nosotros/' + s)).concat(['documentos-gestion', 'inversiones', 'libro-de-reclamaciones', 'licenciamiento', 'tupa', 'estadisticas', 'convocatorias'].map(s => '/transparencia/' + s)).concat(progs().map(p => '/programas/' + p.slug)).concat(pubNews().map(n => '/noticias/' + n.slug));
   urls.push(...extraPages().map(p => pageURL(p).slice(1)));
   downloadText(`\x3c?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map(u => `  <url><loc>${base}${u}</loc></url>`).join('\n')}\n</urlset>`, 'sitemap.xml', 'application/xml');
@@ -1363,6 +1780,19 @@ R('buscar', (path, q) => {
 });
 function notFound(path) { return shell(path, { title: 'Página no encontrada', crumbs: [['Página no encontrada']], side: null, body: `<div class="empty" style="padding:50px"><h1 style="font-size:28px">Página no encontrada</h1><p>La página que buscas no existe o no está publicada.</p><a class="btn" href="#/">Ir al inicio</a> <a class="btn sec" href="#/mapa-del-sitio">Ver mapa del sitio</a></div>` }); }
 
+/* ---------- Visor de fotos de noticias ---------- */
+function openGallery(fotos, start, title) {
+  let k = start; const dlg = document.createElement('dialog'); dlg.className = 'lbx'; dlg.setAttribute('aria-label', 'Fotos: ' + title);
+  dlg.innerHTML = `<img alt=""><p class="lbx-c"></p><button type="button" class="lbx-x" aria-label="Cerrar">✕</button>${fotos.length > 1 ? '<button type="button" class="lbx-p" aria-label="Foto anterior">‹</button><button type="button" class="lbx-n" aria-label="Foto siguiente">›</button>' : ''}`;
+  const show = i => { k = (i + fotos.length) % fotos.length; const im = $('img', dlg); im.src = img(fotos[k]); im.alt = `Foto ${k + 1} de ${fotos.length}: ${title}`; $('.lbx-c', dlg).textContent = `${title} · ${k + 1} / ${fotos.length}`; };
+  $('.lbx-x', dlg).onclick = () => dlg.close();
+  if (fotos.length > 1) { $('.lbx-p', dlg).onclick = () => show(k - 1); $('.lbx-n', dlg).onclick = () => show(k + 1); }
+  dlg.addEventListener('keydown', e => { if (e.key === 'ArrowLeft') show(k - 1); if (e.key === 'ArrowRight') show(k + 1); });
+  dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
+  dlg.addEventListener('close', () => dlg.parentNode && dlg.parentNode.removeChild(dlg));
+  document.body.appendChild(dlg); show(k); dlg.showModal();
+}
+
 /* ---------- Comportamiento común del portal ---------- */
 function bindPublicChrome() {
   let tt = $('.to-top'); if (!tt) { tt = document.createElement('button'); tt.className = 'to-top'; tt.setAttribute('aria-label', 'Volver arriba'); tt.innerHTML = ic('arrowup'); tt.onclick = () => window.scrollTo({ top: 0, behavior: 'smooth' }); document.body.appendChild(tt); window.addEventListener('scroll', () => tt.classList.toggle('show', scrollY > 600 && !document.body.classList.contains('is-admin')), { passive: true }); }
@@ -1375,33 +1805,120 @@ function bindPublicChrome() {
     b.parentNode.addEventListener('keydown', e => { if (e.key === 'Escape') { b.parentNode.classList.remove('open'); b.setAttribute('aria-expanded', 'false'); b.focus(); } });
   });
   if(!window.__publicNavOutside){window.__publicNavOutside=true;document.addEventListener('click', e => { if(!e.target.closest('.mainnav li'))$$('.mainnav li.open').forEach(x => {x.classList.remove('open');$('button.top',x)?.setAttribute('aria-expanded','false');}); });}
+  const uh = $('.u-head'); if (uh) {
+    // Elige la cabecera más amplia que quepa sin superponerse: una fila con nombre, una fila solo con logotipo o el menú en una segunda fila.
+    const fit = () => { const h = $('.u-head'); if (!h) return; h.classList.remove('u-fit-1', 'u-fit-2'); if (matchMedia('(max-width:900px)').matches) return;
+      const ul = $('.mainnav>.wrap>ul', h), tools = $('.u-tools', h), nav = $('.mainnav', h);
+      const over = () => { const last = ul.lastElementChild; return ul.scrollWidth > nav.clientWidth + 1 || (last && last.getBoundingClientRect().right > tools.getBoundingClientRect().left - 6) || document.documentElement.scrollWidth > innerWidth + 1; };
+      if (!over()) return; h.classList.add('u-fit-1'); if (!over()) return; h.classList.remove('u-fit-1'); h.classList.add('u-fit-2'); };
+    fit(); window.__uFit = fit;
+    const sc = () => { const h = $('.u-head'); if (h) h.classList.toggle('u-sc', scrollY > 140); }; sc();
+    if (!window.__uScBound) { window.__uScBound = true; addEventListener('scroll', sc, { passive: true }); }
+    if (!window.__uFitBound) { window.__uFitBound = true; let tm; addEventListener('resize', () => { clearTimeout(tm); tm = setTimeout(() => window.__uFit && window.__uFit(), 80); }, { passive: true }); if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => window.__uFit && window.__uFit()); }
+  }
+  const ua = $('.u-acc-b'); if (ua) { const m = $('#u-acc'); ua.onclick = e => { e.stopPropagation(); const o = !m.classList.contains('open'); m.classList.toggle('open', o); ua.setAttribute('aria-expanded', o); }; if (!window.__uAccOut) { window.__uAccOut = true; document.addEventListener('click', e => { const mm = $('#u-acc'); if (mm && !e.target.closest('.u-acc')) { mm.classList.remove('open'); const b = $('.u-acc-b'); b && b.setAttribute('aria-expanded', 'false'); } }); } }
+  if (ua) { const box = $('.u-acc'), m = $('#u-acc'); const close = focus => { m.classList.remove('open'); ua.setAttribute('aria-expanded', 'false'); if (focus) ua.focus(); };
+    box.addEventListener('keydown', e => { if (e.key === 'Escape' && m.classList.contains('open')) { e.stopPropagation(); close(true); } });
+    box.addEventListener('focusout', e => { if (e.relatedTarget && !box.contains(e.relatedTarget)) close(false); }); }
+  $$('[data-iach]').forEach(sec => { if (!sec.matches('section')) return; const its = $$('.i-ach-i', sec); let k = 0;
+    $$('button[data-iach]', sec).forEach(b => b.onclick = () => { its[k].hidden = true; its[k].classList.remove('on'); k = (k + (+b.dataset.iach) + its.length) % its.length; its[k].hidden = false; its[k].classList.add('on'); cifInit(its[k]); }); });
+  if ($('.k-head')) { const ksc = () => { const h = $('.k-head'); if (h) h.classList.toggle('k-sc', scrollY > 60); }; ksc(); if (!window.__kScBound) { window.__kScBound = true; addEventListener('scroll', ksc, { passive: true }); } }
+  $$('[data-htabgroup]').forEach(g => { const bs = $$('[data-htab]', g), ps = $$('[data-hpane]', g); let k = 0;
+    const show = n => { k = (n + bs.length) % bs.length; bs.forEach((b, x) => { b.setAttribute('aria-selected', x === k ? 'true' : 'false'); b.tabIndex = x === k ? 0 : -1; }); ps.forEach((p, x) => { p.hidden = x !== k; }); };
+    bs.forEach((b, x) => { b.onclick = () => show(x); b.onkeydown = e => { if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); show(k + 1); bs[k].focus(); } if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); show(k - 1); bs[k].focus(); } }; });
+    $$('[data-hstep]', g).forEach(b => b.onclick = () => show(k + (+b.dataset.hstep))); show(0); });
+  const us = $('.u-sb'); if (us) { const f = $('#u-srch'); us.onclick = () => { f.hidden = !f.hidden; us.setAttribute('aria-expanded', !f.hidden); if (!f.hidden) $('input', f).focus(); };
+    f.addEventListener('keydown', e => { if (e.key === 'Escape') { f.hidden = true; us.setAttribute('aria-expanded', 'false'); us.focus(); } }); }
+  $$('.u-car').forEach(c => { const t = $('.pcar-t', c); let d = c.nextElementSibling; if (!d || !d.classList.contains('u-dots')) { d = document.createElement('div'); d.className = 'u-dots'; c.after(d); }
+    const pages = () => Math.max(1, Math.ceil(t.scrollWidth / Math.max(1, t.clientWidth) - 0.05));
+    const curPage = n => { const max = t.scrollWidth - t.clientWidth; return max > 0 ? Math.round(t.scrollLeft / max * (n - 1)) : 0; };
+    const draw = () => { const n = pages(); if (n < 2) { d.innerHTML = ''; d.dataset.n = '1'; return; }
+      if (d.dataset.n !== String(n)) { d.dataset.n = String(n); d.innerHTML = Array.from({ length: n }, (_, k) => `<button type="button" aria-label="Ir al grupo ${k + 1} de ${n}"></button>`).join(''); $$('button', d).forEach((b, k) => b.onclick = () => t.scrollTo({ left: (t.scrollWidth - t.clientWidth) * k / (n - 1), behavior: 'smooth' })); }
+      const k = curPage(n); $$('button', d).forEach((b, i) => b.toggleAttribute('aria-current', i === k)); };
+    draw(); t.addEventListener('scroll', () => { clearTimeout(t.__ud); t.__ud = setTimeout(draw, 90); }, { passive: true }); c.__uDraw = draw; });
+  if (!window.__uDotsResize) { window.__uDotsResize = true; window.addEventListener('resize', () => $$('.u-car').forEach(c => c.__uDraw && c.__uDraw()), { passive: true }); }
   $$('[data-search]').forEach(f => f.onsubmit = e => { e.preventDefault(); go('#/buscar?q=' + encodeURIComponent(f.elements.namedItem('q').value.trim())); });
-  const nl = $('[data-newsletter]'); if (nl) nl.onsubmit = e => { e.preventDefault(); const cap=checkCaptcha(nl,'cap-nl');if(cap)return toast(cap,'err'); const em = $('#nl').value; if (!reEmail.test(em)) return toast('Correo no válido', 'err'); coll('suscriptores').push({ correo: em, fecha: nowISO() }); if (!saveDB()) return; nl.reset(); toast('Tu suscripción quedó registrada. El envío por correo está pendiente de habilitación.', 'ok'); };
+  // carrusel de programas
+  cifInit();
+  $$('[data-pcar]').forEach(c => {
+    const t = $('.pcar-t', c); let paused = false;
+    const step = d => { const it = $('.pcar-i', t); const w = (it ? it.getBoundingClientRect().width : 280) + (parseFloat(getComputedStyle(t).columnGap) || 0); const max = t.scrollWidth - t.clientWidth - 4;
+      if (d > 0 && t.scrollLeft >= max) t.scrollTo({ left: 0, behavior: 'smooth' }); else if (d < 0 && t.scrollLeft <= 4) t.scrollTo({ left: t.scrollWidth, behavior: 'smooth' }); else t.scrollBy({ left: d * w, behavior: 'smooth' }); };
+    $$('[data-pcar-b]', c).forEach(b => b.onclick = () => step(+b.dataset.pcarB));
+    c.onmouseenter = () => paused = true; c.onmouseleave = () => paused = false; c.addEventListener('focusin', () => paused = true); c.addEventListener('focusout', () => paused = false); t.addEventListener('touchstart', () => paused = true, { passive: true });
+    if (PREVIEW || c.hasAttribute('data-pcar-static') || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const id = setInterval(() => { if (!document.body.contains(c)) return clearInterval(id); if (!paused && !document.hidden) step(1); }, 5000);
+  });
   // carrusel
   const slides = $$('.slide');
+  heroAutoFit();
   if (slides.length > 1) {
     let k = 0, paused = false; const show = n => { k = (n + slides.length) % slides.length;
       // Solo se descargan la diapositiva visible y la siguiente (antes bajaban todas, ~9 MB en la portada).
-      [k, (k + 1) % slides.length].forEach(j => { const im = slides[j].querySelector('img[data-src]'); if (im) { im.src = im.dataset.src; im.removeAttribute('data-src'); } }); slides.forEach((s, i) => { s.classList.toggle('on', i === k); s.inert = i !== k; if (i === k) s.removeAttribute('aria-hidden'); else s.setAttribute('aria-hidden', 'true'); }); $$('[data-dot]').forEach((d, i) => d.setAttribute('aria-current', i === k)); };
+      [k, (k + 1) % slides.length].forEach(j => { slides[j].querySelectorAll('img[data-src]').forEach(im => { im.src = im.dataset.src; im.removeAttribute('data-src'); }); }); slides.forEach((s, i) => { s.classList.toggle('on', i === k); s.inert = i !== k; if (i === k) s.removeAttribute('aria-hidden'); else s.setAttribute('aria-hidden', 'true'); }); $$('[data-dot]').forEach((d, i) => d.setAttribute('aria-current', i === k)); };
     show(0);
     $$('[data-sl]').forEach(b => b.onclick = () => show(k + +b.dataset.sl)); $$('[data-dot]').forEach(b => b.onclick = () => show(+b.dataset.dot));
     const hero = $('.hero'); hero.onmouseenter = () => paused = true; hero.onmouseleave = () => paused = false; hero.addEventListener('focusin', () => paused = true); hero.addEventListener('focusout', () => paused = false);
-    clearInterval(window.__sl); window.__sl = setInterval(() => { if (!paused && document.body.contains(hero)) show(k + 1); }, 6500);
+    if (!PREVIEW && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      window.__sl = setInterval(() => { if (!paused && !document.hidden && document.body.contains(hero)) show(k + 1); }, 6000);
+    }
   }
+}
+/* Ajuste automático: una imagen mucho más alta que el carrusel (afiche) se muestra completa, con los bordes difuminados. */
+function heroAutoFit() {
+  const hero = $('.hero'); if (!hero) return;
+  // Lo que tapan los bloques que suben sobre el carrusel (accesos rápidos): las imágenes completas terminan por encima.
+  let nx = hero.nextElementSibling; while (nx && !nx.offsetHeight) nx = nx.nextElementSibling;
+  hero.style.setProperty('--sl-pad', (nx ? Math.max(0, Math.round(hero.getBoundingClientRect().bottom - nx.getBoundingClientRect().top)) : 0) + 'px');
+  const fit = () => $$('.slide.sl-auto', hero).forEach(s => { const im = s.querySelector('.sl-img'); if (!im || !im.naturalWidth || !hero.offsetHeight) return;
+    s.classList.toggle('sl-contain', im.naturalWidth / im.naturalHeight < (hero.offsetWidth / hero.offsetHeight) * .8); });
+  $$('.slide.sl-auto .sl-img', hero).forEach(im => { if (im.complete && im.naturalWidth) fit(); else im.addEventListener('load', fit, { once: true }); });
+  if (!window.__heroFitBound) { window.__heroFitBound = true; let t; addEventListener('resize', () => { clearTimeout(t); t = setTimeout(() => { if (document.querySelector('.hero')) heroAutoFit(); }, 200); }); }
 }
 function revealOnScroll() {
   if (PREVIEW || !('IntersectionObserver' in window) || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   const els = $$('#app .sec-h, #app .card, #app .stat, #app .welcome > *, #app .person, #app .collage figure').filter(e => !e.closest('.modal'));
   const io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }), { rootMargin: '0px 0px -40px 0px' });
+  window.__publicReveal = io;
   els.forEach((e, i) => { const r = e.getBoundingClientRect(); if (r.top < innerHeight) return; e.classList.add('rv'); e.style.transitionDelay = (i % 4) * 70 + 'ms'; io.observe(e); });
 }
 function maybePopup() {
   const p = DB.config.popup; if (!p.activo || PREVIEW) return;
-  const today = new Date().toISOString().slice(0, 10); if ((p.inicio && today < p.inicio) || (p.fin && today > p.fin)) return;
+  const today = localYmd(); if ((p.inicio && today < p.inicio) || (p.fin && today > p.fin)) return;
   try { if (sessionStorage.getItem('popup_seen')) return; sessionStorage.setItem('popup_seen', '1'); } catch (e) { }
-  const m = modal({ title: esc(p.titulo), size: 'sm', body: `${p.imagen ? `<img src="${img(p.imagen)}" alt="" style="border-radius:10px;margin-bottom:12px;aspect-ratio:16/10;object-fit:cover;width:100%">` : ''}<p>${esc(p.texto)}</p>`, foot: p.enlace ? `<a class="btn gold" ${linkAttrs(p.enlace)} data-go>${esc(p.boton || 'Ver más')}</a>` : '' });
+  if (p.modelo === 'promocional') return promoPopup(p);
+  const m = modal({ title: esc(p.titulo), size: 'sm', body: `${p.imagen ? `<img src="${img(p.imagen)}" alt="" style="border-radius:10px;margin-bottom:12px;aspect-ratio:16/10;object-fit:cover;width:100%">` : ''}<p>${esc(p.texto)}</p>`, foot: resolveLink(p.enlace) ? `<a class="btn gold" ${linkAttrs(resolveLink(p.enlace))} data-go>${esc(p.boton || 'Ver más')}</a>` : '' });
   const g = $('[data-go]', m.el); if (g) g.addEventListener('click', () => m.close());
 }
+
+/* Ventana emergente «Promocional»: imagen a todo el fondo, título destacado y tarjetas encadenadas con flechas */
+const POP_TARJETAS = [1, 2, 3, 4];
+function promoCards(p) { return POP_TARJETAS.map(k => ({ t: String(p['t' + k] || '').trim(), d: String(p['d' + k] || '').trim() })).filter(c => c.t || c.d); }
+function promoHTML(p) {
+  const cs = promoCards(p); const i = inst();
+  return `<div class="pp" role="dialog" aria-modal="true" aria-labelledby="pp-t" ${p.texto ? 'aria-describedby="pp-d"' : ''}>
+    ${p.imagen ? `<img class="pp-bg" src="${img(p.imagen)}" alt="">` : ''}<i class="pp-shade" aria-hidden="true"></i>
+    <button type="button" class="pp-x" aria-label="Cerrar ventana">✕</button>
+    <div class="pp-top"><span class="pp-logo${brandLong() ? ' b-long' : ''}"><img src="${logoSrc()}" alt=""><b>${esc(brandSigla())}</b></span>${p.etiqueta ? `<span class="pp-tag">${esc(p.etiqueta)}</span>` : ''}</div>
+    <div class="pp-main">${p.antetitulo ? `<p class="pp-pre">${esc(p.antetitulo)}</p>` : ''}<h2 id="pp-t">${esc(p.titulo)}</h2>${p.texto ? `<p class="pp-txt" id="pp-d">${esc(p.texto)}</p>` : ''}</div>
+    ${cs.length ? `<ol class="pp-cards pp-n${cs.length}">${cs.map((c, k) => `<li class="${k === cs.length - 1 && cs.length > 1 ? 'pp-last' : ''}">${c.t ? `<b>${esc(c.t)}</b>` : ''}${c.d ? `<span>${esc(c.d)}</span>` : ''}${k < cs.length - 1 ? '<i class="pp-arr" aria-hidden="true"></i>' : ''}</li>`).join('')}</ol>` : ''}
+    ${resolveLink(p.enlace) ? `<p class="pp-cta"><a class="pp-btn" ${linkAttrs(resolveLink(p.enlace))} data-go>${esc(p.boton || 'Ver más')} <span aria-hidden="true">→</span></a></p>` : ''}
+  </div>`;
+}
+function promoPopup(p) {
+  const bg = document.createElement('div'); bg.className = 'pp-wrap'; bg.innerHTML = promoHTML(p);
+  const prev = document.activeElement;
+  const close = () => { bg.remove(); document.removeEventListener('keydown', onKey); document.documentElement.classList.remove('pp-open'); prev && prev.focus && prev.focus(); };
+  const onKey = e => { if (e.key === 'Escape') close(); if (e.key === 'Tab') { const f = $$('a[href],button', bg); const a = f[0], z = f[f.length - 1]; if (e.shiftKey && document.activeElement === a) { e.preventDefault(); z.focus(); } else if (!e.shiftKey && document.activeElement === z) { e.preventDefault(); a.focus(); } } };
+  bg.addEventListener('click', e => { if (e.target === bg) close(); });
+  $('.pp-x', bg).onclick = close; const g = $('[data-go]', bg); if (g) g.addEventListener('click', close);
+  document.addEventListener('keydown', onKey); document.body.appendChild(bg); document.documentElement.classList.add('pp-open');
+  setTimeout(() => $('.pp-x', bg).focus(), 30);
+  return { el: bg, close };
+}
+
+/* vista previa desde Portada › Ventana emergente */
+if (!window.__popPrev) { window.__popPrev = true; document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('[data-popprev]'); if (!b) return; const f = b.closest('form') || document; const w = Object.assign({}, DB.config.popup); $$('[name]', f).forEach(x => { if (x.type === 'checkbox') w[x.name] = x.checked; else if (x.type !== 'file') w[x.name] = x.value; }); if (ADM.work && ADM.workKey && /Ventana emergente/.test(ADM.workKey)) Object.assign(w, { imagen: ADM.work.imagen }); if (!w.titulo) w.titulo = 'Título de la ventana'; if (w.modelo === 'promocional') { const pv = promoPopup(w); $$('a', pv.el).forEach(a => { a.removeAttribute('href'); a.removeAttribute('target'); a.setAttribute('aria-disabled', 'true'); a.style.cursor = 'default'; a.onclick = ev => ev.preventDefault(); }); } else { const m = modal({ title: esc(w.titulo), size: 'sm', body: `${w.imagen ? `<img src="${img(w.imagen)}" alt="" style="border-radius:10px;margin-bottom:12px;aspect-ratio:16/10;object-fit:cover;width:100%">` : ''}<p>${esc(w.texto || '')}</p>`, foot: w.enlace ? `<span class="btn gold">${esc(w.boton || 'Ver más')}</span>` : '' }); } }); }
 
 /* ==== admin1.js ==== */
 /* =========================================================
@@ -1571,8 +2088,13 @@ function bindFields(fields, work, root, rerender) {
   $$('[data-imgf]', root).forEach(inp => inp.onchange = () => editorFileTask(inp, async () => {
     const f = inp.files[0]; if (!f) return; const n = inp.dataset.imgf; const er = checkFile(f, 'image'); if (er) { inp.value = ''; return toast(er, 'err'); }
     if (work[n] && !await confirmBox('¿Reemplazar la imagen actual por la nueva?', { ok: 'Reemplazar', danger: false })) { inp.value = ''; return; }
-    const image = await compressImage(f); if (ADM.work !== work) return;
-    work[n] = image; rerender(); toast('Imagen cargada y optimizada (' + fsize(work[n].length * .75) + ').', 'ok');
+    const fd = (fields || []).find(x => x.n === n) || {};
+    const image = fd.hq ? await compressImage(f, 2560, { q: .9, sharpen: .35, keep: 900 * 1024 }) : await compressImage(f); if (ADM.work !== work) return;
+    work[n] = image; rerender();
+    const dim = compressImage.last || {};
+    if (fd.hq && dim.w && dim.w < 1600) toast(`Imagen cargada, pero mide ${dim.w} × ${dim.h} px: se verá borrosa en pantallas grandes. Use una de al menos 1920 × 800 px.`, 'warn');
+    else if (fd.hq && dim.w && dim.h && dim.w / dim.h < 1.8) toast(`Imagen cargada (${dim.w} × ${dim.h} px). Es más alta que el carrusel (1920 × 800): con «Ajuste automático» se mostrará completa, con los bordes difuminados. Si es un afiche con su propio texto, elija «Solo imagen» en «Presentación».`, 'ok');
+    else toast('Imagen cargada y optimizada (' + fsize(work[n].length * .75) + (dim.w ? `, original ${dim.w} × ${dim.h} px` : '') + ').', 'ok');
   }));
   $$('[data-imgx]', root).forEach(b => b.onclick = async () => { if (await confirmBox('¿Retirar la imagen? Se usará la imagen institucional predeterminada.', { ok: 'Retirar' })) { work[b.dataset.imgx] = ''; rerender(); } });
   $$('[data-ff]', root).forEach(inp => inp.onchange = () => editorFileTask(inp, async () => {
@@ -1751,6 +2273,8 @@ const ESTADOS = ['Borrador', 'Publicado', 'Despublicado'];
 /* ---------- Noticias ---------- */
 SPECS.noticias = {
   key: 'noticias', mod: 'noticias', coll: 'noticias', title: 'Noticias', singular: 'noticia', icon: 'list', sub: 'Gestiona las noticias institucionales, académicas y eventos.',
+  extraActs: () => can('portada') ? `<label class="pview">Vista en la portada <select class="inp" data-nview>${[['', 'Según el diseño'], ['tarjetas', 'Tarjetas'], ['carrusel', 'Carrusel']].map(([v, l]) => `<option value="${v}"${(DB.config.home.noticiasVista || '') === v ? ' selected' : ''}>${l}</option>`).join('')}</select></label>` : '',
+  afterList: () => { const sel = $('[data-nview]'); if (sel) sel.onchange = () => { DB.config.home.noticiasVista = sel.value; audit('Vista de noticias', 'Noticias', sel.value || 'Según el diseño'); if (!saveDB()) return; toast('Las noticias de la portada se mostrarán ' + (sel.value === 'carrusel' ? 'en carrusel' : sel.value === 'tarjetas' ? 'en tarjetas' : 'según el diseño del portal') + '.', 'ok'); }; },
   states: ['Borrador', 'Publicada', 'Despublicada', 'Archivada'], pubState: 'Publicada', label: r => r.titulo,
   tabs: a => tabsBar([['list', 'Noticias', '#/admin/noticias'], ['cat', 'Categorías', '#/admin/catnoticias']], 'list'),
   search: ['titulo', 'resumen', r => stripTags(r.contenido)], searchPh: 'Título o contenido',
@@ -1768,7 +2292,8 @@ SPECS.noticias = {
     { n: 'titulo', l: 'Título', req: true, max: 160, full: true, unique: 'norm' },
     { n: 'resumen', l: 'Resumen', t: 'textarea', pubReq: true, max: 300, full: true, hint: 'Máximo 300 caracteres. Se muestra en las tarjetas.' },
     { n: 'contenido', l: 'Contenido', t: 'rich', pubReq: true },
-    { n: 'imagen', l: 'Imagen principal', t: 'image', full: true, hint: 'Si no se carga, se usa la imagen institucional predeterminada.' },
+    { n: 'imagen', l: 'Imagen principal', t: 'image', full: true, hint: 'Si no se carga, se usa la imagen institucional predeterminada. Puede agregar hasta 4 fotos adicionales (5 en total).' },
+    ...[2, 3, 4, 5].map(k => ({ n: 'foto' + k, l: 'Foto adicional ' + (k - 1), t: 'image' })),
     { n: 'imagenAjuste', l: 'Presentación de la imagen', t: 'select', opts: [['','Automática'],['contain','Completa: logotipo, afiche o documento'],['cover','Cubrir: fotografía']], hint: 'Usa imagen completa para conservar textos y logotipos.' },
     { n: 'video', l: 'Video principal (opcional)', t: 'url', full: true, ph: 'https://www.youtube.com/embed/…', hint: 'URL de inserción (embed). Reemplaza a la imagen en el detalle.' },
     { n: 'adjuntos', l: 'Archivos relacionados', t: 'rows', cols: [{ n: 'titulo', l: 'Título del archivo' }, { n: 'doc', l: 'Archivo PDF', t: 'file' }] },
@@ -1835,7 +2360,7 @@ SPECS.documentos = {
   beforeSave: w => { w.grupo = w.grupo || slugify(w.nombre); if (w.refModulo) w.archivo = null; },
   afterForm: (w, isNew, rerender, form) => { form.refModulo.onchange = rerender; },
   validate: w => { const dup = alive('documentos').find(d => d.id !== w.id && normTitle(d.nombre) === normTitle(w.nombre) && d.tipoId === w.tipoId && String(d.vigencia) === String(w.vigencia) && String(d.version) === String(w.version)); if (dup) return { version: 'Ya existe esta misma versión del documento (mismo nombre, tipo, vigencia y versión).' }; if (!w.refModulo && /reglamento de admision/.test(normTitle(w.nombre))) return { refModulo: 'El Reglamento de Admisión ya se administra en el módulo Admisión. Use la opción de referencia para no duplicar el archivo.' }; return {}; },
-  afterSave: w => { if (w.estado === 'Publicado') { w.fechaPub = w.fechaPub || new Date().toISOString().slice(0, 10); w.publicadoPor = currentUser().usuario; coll('documentos').forEach(d => { if (d.id !== w.id && d.grupo === w.grupo && d.estado === 'Publicado' && !d.deleted) { d.estado = 'Histórico'; stamp(d); audit('Paso a histórico', 'Documentos de gestión', d.nombre + ' v' + d.version, 'Por publicación de v' + w.version); } }); } },
+  afterSave: w => { if (w.estado === 'Publicado') { w.fechaPub = w.fechaPub || localYmd(); w.publicadoPor = currentUser().usuario; coll('documentos').forEach(d => { if (d.id !== w.id && d.grupo === w.grupo && d.estado === 'Publicado' && !d.deleted) { d.estado = 'Histórico'; stamp(d); audit('Paso a histórico', 'Documentos de gestión', d.nombre + ' v' + d.version, 'Por publicación de v' + w.version); } }); } },
   inUse: r => r.refModulo ? 'Este registro referencia un documento de otro módulo; no puede eliminarse definitivamente mientras exista la relación.' : '',
 };
 SPECS.tiposdoc = {
@@ -1922,6 +2447,8 @@ SPECS.programas = {
   key: 'programas', mod: 'programas', coll: 'programas', title: 'Programas de estudio', singular: 'programa', icon: 'grad', states: ['Borrador', 'Publicado'], label: r => r.nombre, order: true, softDelete: false,
   sub: 'Plantilla única para los programas de estudio. La plana docente se obtiene automáticamente del módulo Plana docente.',
   canCreate: () => currentUser().rol === 'admin', scope: scopeProg, preview: r => '#/programas/' + (r.slug || slugify(r.nombre)),
+  extraActs: () => can('portada') ? `<label class="pview">Vista en la web <select class="inp" data-pview>${[['carrusel', 'Carrusel'], ['grid', 'Cuadrícula']].map(([v, l]) => `<option value="${v}"${progView() === v ? ' selected' : ''}>${l}</option>`).join('')}</select></label>` : '',
+  afterList: () => { const sel = $('[data-pview]'); if (sel) sel.onchange = () => { DB.config.home.programasVista = sel.value; audit('Vista de programas', 'Programas de estudio', sel.value === 'carrusel' ? 'Carrusel' : 'Cuadrícula'); if (!saveDB()) return; toast('Los programas se mostrarán en ' + (sel.value === 'carrusel' ? 'carrusel' : 'cuadrícula') + ' en la portada y en la página de programas.', 'ok'); }; },
   cols: [{ l: 'Orden', cls: 'c', f: r => r.orden }, { l: 'Imagen', f: r => thumb(r.imagen) }, { l: 'Programa', f: r => `<b>${esc(r.nombre)}</b><br><small>${esc(r.turno)} · ${esc(r.duracion)}</small>` }, { l: 'Docentes', cls: 'num', f: r => alive('personas').filter(p => (p.programas || []).includes(r.id) && p.estado === 'Publicado').length }, { l: 'UD', cls: 'num', f: r => r.modulos.reduce((a, m) => a + m.uds.length, 0) }, { l: 'Egresados', cls: 'num', f: r => alive('egresados').filter(e => e.programaId === r.id).length }, { l: 'Estado', f: r => stBadge(r.estado) }],
   defaults: () => ({ modulos: [], campoItems: [], convenios: [], duracion: '3 años (6 semestres)', modalidad: 'Presencial', orden: alive('programas').length + 1, docVersiones: [] }),
   versioned: ['brochure', 'malla'],
@@ -2010,7 +2537,7 @@ SPECS.enlaces = {
   sub: 'URL configurable de cada servicio externo. Un enlace inactivo o sin URL no se muestra en el portal (evita enlaces rotos).', filters: [{ n: 'grupo', l: 'Grupo', opts: linkGroupOptions }],
   cols: [{ l: 'Nombre', f: r => `<b>${esc(r.nombre)}</b>` }, { l: 'URL', f: r => r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(clamp(r.url, 45))}</a>` : '<span class="badge warn">Sin configurar</span>' }, { l: 'Grupo', f: r => esc(r.grupo) }, { l: 'Última verificación', f: r => r.verificado ? fshort(r.verificado + 'T12:00') + (Date.now() - new Date(r.verificado) > 31 * 864e5 ? ' <span class="badge warn">Revisar</span>' : '') : '—' }, { l: 'Estado', f: r => stBadge(r.estado) }],
   rowActs: r => r.url ? ib('chk', 'check', 'Marcar como verificado hoy') : '',
-  onAct: (a, r, rer) => { if (a === 'chk') { window.open(r.url, '_blank', 'noopener'); r.verificado = new Date().toISOString().slice(0, 10); audit('Verificación de enlace', 'Enlaces', r.nombre); saveDB(); rer(); } },
+  onAct: (a, r, rer) => { if (a === 'chk') { window.open(r.url, '_blank', 'noopener'); r.verificado = localYmd(); audit('Verificación de enlace', 'Enlaces', r.nombre); saveDB(); rer(); } },
   fields: [{ n: 'nombre', l: 'Nombre', req: true }, { n: 'grupo', l: 'Grupo', t: 'select', req: true, opts: linkGroupOptions }, { n: 'url', l: 'URL', t: 'url', full: true, pubReq: true }, { n: 'color', l: 'Color del logotipo', t: 'color' }, { n: 'verificado', l: 'Fecha de última verificación', t: 'date' }],
 };
 SPECS.servicios = {
@@ -2022,13 +2549,19 @@ SPECS.slides = {
   key: 'slides', mod: 'portada', coll: 'slides', title: 'Portada – carrusel', singular: 'diapositiva', icon: 'image', states: ESTADOS, label: r => r.titulo, order: true, preview: () => '#/',
   tabs: () => portadaTabs('s'),
   cols: [{ l: 'Orden', cls: 'c', f: r => r.orden }, { l: 'Imagen', f: r => thumb(r.imagen) }, { l: 'Título', f: r => `<b>${esc(r.titulo)}</b><br><small>${esc(r.texto)}</small>` }, { l: 'Botón', f: r => esc(r.boton) }, { l: 'Estado', f: r => stBadge(r.estado) }],
-  fields: [{ n: 'titulo', l: 'Título', req: true, full: true, max: 70 }, { n: 'texto', l: 'Texto', t: 'textarea', full: true, max: 180 }, { n: 'boton', l: 'Texto del botón', max: 30 }, { n: 'enlace', l: 'Enlace del botón', ph: '#/admision o https://…' }, { n: 'imagen', l: 'Imagen (escritorio, 1600×600 px aprox.)', t: 'image', full: true, req: true }, { n: 'orden', l: 'Orden', t: 'number', side: true, req: true, min: 1 }],
+  fields: [{ n: 'titulo', l: 'Título', req: true, full: true, max: 70 }, { n: 'texto', l: 'Texto', t: 'textarea', full: true, max: 180 }, { n: 'boton', l: 'Texto del botón', max: 30 }, { n: 'enlace', l: 'Enlace del botón', ph: '#/admision o https://…' }, { n: 'imagen', l: 'Imagen de la portada', t: 'image', full: true, req: true, hq: true, hint: 'Medida recomendada: 1920 × 800 px o mayor (ideal 2560 × 1066 px), JPG o WEBP. Se guarda en alta calidad (hasta 2560 px). Deje lo importante lejos de los bordes.' },
+    { n: 'modo', l: 'Presentación', t: 'select', empty: false, opts: [['', 'Imagen con título y texto'], ['imagen', 'Solo imagen (afiche que ya trae su texto)']], hint: '«Solo imagen» muestra el afiche completo, sin título, texto ni oscurecido. Si tiene enlace, toda la imagen es clicable; el título se usa como descripción para lectores de pantalla.' },
+    { n: 'ajuste', l: 'Ajuste de la imagen', t: 'select', empty: false, opts: [['', 'Automático (recomendado)'], ['cover', 'Llenar el espacio (fotos)'], ['contain', 'Mostrar completa (afiches con texto)']], hint: '«Automático» llena el espacio con las fotos y muestra completas las imágenes más altas que el carrusel, con los bordes difuminados. «Solo imagen» siempre la muestra completa.' },
+    { n: 'enfoque', l: 'Punto de enfoque', t: 'select', empty: false, opts: [['center', 'Centro'], ['left', 'Izquierda'], ['right', 'Derecha'], ['top', 'Arriba'], ['bottom', 'Abajo']], hint: 'Parte de la foto que no debe recortarse.' },
+    { n: 'capa', l: 'Oscurecido para el texto', t: 'select', empty: false, opts: [['', 'Según el diseño (recomendado)'], ['suave', 'Suave'], ['fuerte', 'Fuerte'], ['ninguna', 'Sin oscurecer']] },
+    { n: 'realce', l: 'Realce de imagen (contraste y color)', t: 'select', empty: false, opts: [['', 'Sí (recomendado)'], ['no', 'No']] },
+    { n: 'orden', l: 'Orden', t: 'number', side: true, req: true, min: 1 }],
   validate: w => w.enlace && !/^(#\/|https?:\/\/|ext:)/.test(w.enlace) ? { enlace: 'Use una ruta interna (#/…) o una URL completa (https://…). No use “#” vacío.' } : (w.boton && !w.enlace ? { enlace: 'Indique el enlace del botón.' } : {}),
 };
 const portadaTabs = a => tabsBar([['s', 'Carrusel', '#/admin/slides'], ['b', 'Bloques, accesos y cifras', '#/admin/portada'], ['p', 'Ventana emergente', '#/admin/popup']], a);
 SPECS.usuarios = {
   key: 'usuarios', mod: 'usuarios', coll: 'usuarios', title: 'Usuarios y roles', singular: 'usuario', icon: 'key', states: ['Activo', 'Inactivo'], pubState: 'Activo', label: r => r.usuario, softDelete: false,
-  cols: [{ l: 'Usuario', f: r => `<b>${esc(r.usuario)}</b>` }, { l: 'Nombre', f: r => esc(r.nombre) }, { l: 'Rol', f: r => esc(ROLES[r.rol]?.label) + (r.programaId ? ` <small>(${esc(r.programaId.toUpperCase())})</small>` : '') }, { l: 'Último acceso', f: r => r.ultimoAcceso ? fshort(r.ultimoAcceso, true) : '—' }, { l: 'Seguridad', f: r => r.bloqueadoHasta > Date.now() ? '<span class="badge err">Bloqueado</span>' : '<span class="badge ok">OK</span>' }, { l: 'Estado', f: r => stBadge(r.estado) }],
+  cols: [{ l: 'Usuario', f: r => `<b>${esc(r.usuario)}</b>` }, { l: 'Nombre', f: r => esc(r.nombre) }, { l: 'Rol', f: r => esc(ROLES[r.rol]?.label) + (r.programaId ? ` <small>(${esc((DB.programas.find(p => p.id === r.programaId) || {}).codigo || r.programaId.toUpperCase())})</small>` : '') }, { l: 'Último acceso', f: r => r.ultimoAcceso ? fshort(r.ultimoAcceso, true) : '—' }, { l: 'Seguridad', f: r => r.bloqueadoHasta > Date.now() ? '<span class="badge err">Bloqueado</span>' : '<span class="badge ok">OK</span>' }, { l: 'Estado', f: r => stBadge(r.estado) }],
   rowActs: r => r.bloqueadoHasta > Date.now() ? ib('unlock', 'lock', 'Desbloquear') : '',
   onAct: (a, r, rer) => { if (a === 'unlock') { r.bloqueadoHasta = 0; r.intentos = 0; audit('Desbloqueo de cuenta', 'Usuarios', r.usuario); saveDB(); rer(); } },
   afterList: () => { $('.adm-main').insertAdjacentHTML('beforeend', `<div class="panel"><h2 id="perm-h">Matriz de permisos por rol</h2><div class="tbl-wrap" style="border:0" tabindex="0" role="region" aria-labelledby="perm-h"><table class="tbl light perm-grid"><thead><tr><th>Módulo</th>${Object.values(ROLES).map(r => `<th>${esc(r.label)}</th>`).join('')}</tr></thead><tbody>${Object.entries(MODULES).map(([k, l]) => `<tr><td>${esc(l)}</td>${Object.values(ROLES).map(r => `<td>${r.mods.includes(k) ? '✔' : '<span style="color:#ccc">—</span>'}</td>`).join('')}</tr>`).join('')}<tr><td><b>Publicar</b></td>${Object.values(ROLES).map(r => `<td>${r.publish ? '✔' : '—'}</td>`).join('')}</tr><tr><td><b>Aprobar (Transparencia, Admisión, Convocatorias)</b></td>${Object.values(ROLES).map(r => `<td>${r.approve ? '✔' : '—'}</td>`).join('')}</tr><tr><td><b>Eliminación definitiva</b></td>${Object.values(ROLES).map(r => `<td>${r.hardDelete ? '✔' : '—'}</td>`).join('')}</tr><tr><td><b>Ver DNI completo</b></td>${Object.values(ROLES).map(r => `<td>${r.viewDni ? '✔' : '—'}</td>`).join('')}</tr></tbody></table></div></div>`); },
@@ -2160,7 +2693,15 @@ CUSTOM.licenciamiento = () => singletonForm({
 });
 CUSTOM.popup = () => singletonForm({
   title: 'Ventana emergente (comunicado)', icon: 'bell', tabs: portadaTabs('p'), crumbs: [['Portada', '#/admin/slides'], ['Ventana emergente']], get: () => DB.config.popup,
-  fields: [{ n: 'activo', l: 'Mostrar ventana emergente en la portada', t: 'checkbox', full: true }, { n: 'titulo', l: 'Título', req: true, full: true }, { n: 'texto', l: 'Texto', t: 'textarea', full: true }, { n: 'boton', l: 'Texto del botón' }, { n: 'enlace', l: 'Enlace', ph: '#/admision' }, { n: 'inicio', l: 'Mostrar desde', t: 'date' }, { n: 'fin', l: 'Mostrar hasta', t: 'date' }, { n: 'imagen', l: 'Imagen', t: 'image', full: true }],
+  sub: 'Elige el modelo «Comunicado» (ventana sencilla) o «Promocional» (imagen a todo el fondo, título grande y tarjetas encadenadas, ideal para admisión o campañas).',
+  fields: [{ n: 'activo', l: 'Mostrar ventana emergente en la portada', t: 'checkbox', full: true },
+    { n: 'modelo', l: 'Modelo de ventana', t: 'select', empty: false, opts: [['clasico', 'Comunicado (sencillo)'], ['promocional', 'Promocional (imagen de fondo y tarjetas)']], hint: 'El modelo promocional usa la imagen como fondo completo; conviene una foto horizontal o cuadrada.' },
+    { n: 'etiqueta', l: 'Etiqueta superior (promocional)', max: 40, ph: 'Admisión 2026' },
+    { n: 'antetitulo', l: 'Antetítulo (promocional)', max: 60, ph: 'Inscripciones abiertas', full: true },
+    { n: 'titulo', l: 'Título', req: true, full: true, max: 90 }, { n: 'texto', l: 'Texto', t: 'textarea', full: true, max: 300 },
+    ...POP_TARJETAS.flatMap(k => [{ n: 't' + k, l: `Tarjeta ${k}: título${k === 4 ? ' (destacada)' : ''}`, max: 40, ph: ['Título a nombre de la Nación', 'Horarios', 'Duración', 'Y ahora'][k - 1] }, { n: 'd' + k, l: `Tarjeta ${k}: texto`, max: 80, ph: ['Profesional Técnico', 'Mañana y tarde', '3 años (6 semestres)', 'Examen de admisión el 5 de abril'][k - 1] }]),
+    { n: 'boton', l: 'Texto del botón' }, { n: 'enlace', l: 'Enlace', ph: '#/admision' }, { n: 'inicio', l: 'Mostrar desde', t: 'date' }, { n: 'fin', l: 'Mostrar hasta', t: 'date' }, { n: 'imagen', l: 'Imagen', t: 'image', full: true, hq: true, hint: 'Para el modelo promocional: imagen cuadrada u horizontal de al menos 1200 px; se guarda en alta calidad.' }],
+  extra: `<div class="panel"><div class="pb" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span>Revisa cómo se verá antes de activarla:</span><button type="button" class="btn sec" data-popprev>Vista previa de la ventana</button></div></div>`,
   onSave: (w, er) => { if (w.inicio && w.fin && w.fin < w.inicio) er.fin = 'La fecha final debe ser posterior a la inicial.'; if (Object.keys(er).length) return; DB.config.popup = w; try { sessionStorage.removeItem('popup_seen'); } catch (e) { } },
 });
 function quickAccessSummary(accesses) {
@@ -2171,9 +2712,11 @@ CUSTOM.portada = () => singletonForm({
   title: 'Portada – bloques, accesos y cifras', icon: 'image', tabs: portadaTabs('b'), crumbs: [['Portada', '#/admin/slides'], ['Bloques']], get: () => DB.config.home,
   fields: [
     { n: 'bloques', l: 'Bloques de la portada (orden y visibilidad)', t: 'custom', render: w => `<div style="display:grid;gap:6px;max-width:520px">${w.bloques.map((b, i) => `<div style="display:flex;gap:8px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:6px 10px;background:var(--card)"><span style="flex:1">${i + 1}. ${esc(b.label)}</span><label class="check"><input type="checkbox" data-bon="${i}" ${b.on ? 'checked' : ''}> Visible</label><button type="button" class="icon-btn" data-bup="${i}" title="Subir">${ic('up')}</button><button type="button" class="icon-btn" data-bdn="${i}" title="Bajar">${ic('down')}</button></div>`).join('')}</div>`, bind: (w, box, rer) => { $$('[data-bon]', box).forEach(c => c.onchange = () => w.bloques[+c.dataset.bon].on = c.checked); $$('[data-bup]', box).forEach(b => b.onclick = () => { const i = +b.dataset.bup; if (i) { [w.bloques[i - 1], w.bloques[i]] = [w.bloques[i], w.bloques[i - 1]]; rer(); } }); $$('[data-bdn]', box).forEach(b => b.onclick = () => { const i = +b.dataset.bdn; if (i < w.bloques.length - 1) { [w.bloques[i + 1], w.bloques[i]] = [w.bloques[i], w.bloques[i + 1]]; rer(); } }); } },
-    { n: 'accesos', l: 'Accesos rápidos (4 recomendados)', t: 'rows', cols: [{ n: 'titulo', l: 'Título' }, { n: 'texto', l: 'Texto' }, { n: 'icono', l: 'Ícono', t: 'select', def: 'clipboard', opts: ['clipboard', 'book', 'mail', 'monitor', 'briefcase', 'grad', 'database', 'globe'] }, { n: 'enlace', l: 'Enlace (#/ruta, https:// o ext:id)' }] },
+    { n: 'programasVista', l: 'Presentación de los programas de estudio (portada y página de programas)', t: 'select', empty: false, opts: [['carrusel', 'Carrusel con desplazamiento automático'], ['grid', 'Cuadrícula']] },
+    { n: 'noticiasVista', l: 'Presentación de las noticias en la portada', t: 'select', empty: false, opts: [['', 'Según el diseño del portal'], ['tarjetas', 'Tarjetas (cuadrícula)'], ['carrusel', 'Carrusel con desplazamiento automático']], hint: 'En carrusel se muestran hasta 9 noticias; en tarjetas, las más recientes que caben en una fila o dos.' },
+    { n: 'accesos', l: 'Accesos rápidos (4 o 6 recomendados)', t: 'rows', cols: [{ n: 'titulo', l: 'Título' }, { n: 'texto', l: 'Texto' }, { n: 'icono', l: 'Ícono', t: 'select', def: 'clipboard', opts: ['clipboard', 'book', 'mail', 'monitor', 'briefcase', 'grad', 'database', 'globe'] }, { n: 'enlace', l: 'Enlace (#/ruta, https:// o ext:id)' }] },
     { n: 'estadoAccesos', l: 'Visibilidad de los accesos', t: 'custom', render: w => quickAccessSummary(w.accesos), bind: (w, box) => { const form = box.closest('form'); const update = () => { box.innerHTML = quickAccessSummary(w.accesos); }; form.addEventListener('input', update); form.addEventListener('change', update); } },
-    { n: 'cifras', l: 'Cifras institucionales (use auto:anios, auto:programas, auto:matriculados o auto:egresados para calcularlas desde los datos)', t: 'rows', cols: [{ n: 'label', l: 'Etiqueta' }, { n: 'valor', l: 'Valor' }, { n: 'corte', l: 'Año de corte' }] },
+    { n: 'cifras', l: 'Cifras institucionales (use auto:anios, auto:programas, auto:matriculados o auto:egresados para calcularlas desde los datos)', t: 'rows', cols: [{ n: 'label', l: 'Etiqueta' }, { n: 'valor', l: 'Valor' }, { n: 'corte', l: 'Año de corte' }, { n: 'enlace', l: 'Enlace (opcional; vacío = automático)' }] },
     { n: 'beneficios', l: '¿Por qué estudiar aquí? (hasta 8)', t: 'rows', cols: [{ n: 't', l: 'Título' }, { n: 'd', l: 'Descripción' }, { n: 'i', l: 'Ícono', t: 'select', opts: ['grad', 'users', 'flask', 'briefcase', 'award', 'building', 'target', 'globe', 'monitor', 'star'] }] },
   ],
   onSave: (w, er) => { (w.accesos || []).forEach(a => { if (!String(a.titulo || '').trim() || !String(a.enlace || '').trim()) er.accesos = 'Completa el título y el enlace de cada acceso, o quita la fila vacía.'; else if (!/^(#\/|https?:\/\/|ext:)/.test(a.enlace)) er.accesos = 'Enlace no válido: “' + a.enlace + '”. No use “#” vacío ni javascript:.'; }); (w.cifras || []).forEach(c => { if (!c.corte) er.cifras = 'Cada cifra debe indicar su año de corte.'; }); if ((w.beneficios || []).length > 8 && JSON.stringify(w.beneficios)!==JSON.stringify(DB.config.home.beneficios)) er.beneficios = 'Máximo 8 beneficios. Reduzca la lista antes de modificarla.'; if (Object.keys(er).length) return; DB.config.home = w; },
@@ -2182,10 +2725,10 @@ CUSTOM.config = () => singletonForm({
   title: 'Configuración general', icon: 'gear', sub: 'Datos institucionales, contacto, redes, SEO, correos y parámetros protegidos.',
   get: () => Object.assign({}, DB.config.inst, { fb: DB.config.redes.facebook, yt: DB.config.redes.youtube, ig: DB.config.redes.instagram, tt: DB.config.redes.tiktok, seoTitulo: DB.config.seo.titulo, seoDesc: DB.config.seo.descripcion, correoReclamos: DB.config.correoReclamos, correoContacto: DB.config.correoContacto, waNum: DB.config.whatsapp.numero, waMsg: DB.config.whatsapp.mensaje, waOn: DB.config.whatsapp.activo, limDesc: DB.config.limites.descripcion, limPed: DB.config.limites.pedido, simFail: DB.config.simularFalloCorreo }),
   fields: [
-    { n: 'nombre', l: 'Denominación oficial', req: true, full: true }, { n: 'nombreCorto', l: 'Nombre corto / siglas', req: true }, { n: 'logoSigla', l: 'Texto del logotipo generado', max: 10 },
+    { n: 'nombre', l: 'Denominación oficial', req: true, full: true }, { n: 'nombreCorto', l: 'Nombre corto / siglas', req: true }, { n: 'logoSigla', l: 'Texto del logotipo generado', max: 10, hint: 'Texto opcional junto al logotipo en los diseños Impacto, Horizonte y Campus. Si se deja vacío, se muestra el nombre corto oficial completo.' },
     { n: 'slogan', l: 'Eslogan', full: true }, { n: 'lema', l: 'Lema de cabecera' }, { n: 'descripcion', l: 'Descripción institucional (pie de página)', t: 'textarea', full: true },
     { n: 'logo', l: 'Logotipo oficial (opcional, reemplaza al generado)', t: 'image', full: true },
-    { n: 'direccion', l: 'Dirección', req: true, full: true }, { n: 'telefono', l: 'Teléfono', req: true }, { n: 'telefonoNota', l: 'Detalle del teléfono' }, { n: 'correo', l: 'Correo institucional', t: 'email' }, { n: 'horario', l: 'Horario de atención', req: true }, { n: 'horarioSab', l: 'Horario de sábados' },
+    { n: 'direccion', l: 'Dirección', req: true, full: true }, { n: 'distrito', l: 'Distrito', max: 80 }, { n: 'region', l: 'Región (departamento)', max: 80, hint: 'Se usa en el pie de la intranet, en los títulos emitidos y en los datos para buscadores.' }, { n: 'telefono', l: 'Teléfono', req: true }, { n: 'telefonoNota', l: 'Detalle del teléfono' }, { n: 'correo', l: 'Correo institucional', t: 'email' }, { n: 'horario', l: 'Horario de atención', req: true }, { n: 'horarioSab', l: 'Horario de sábados' },
     { n: 'ruc', l: 'RUC' }, { n: 'codigoModular', l: 'Código modular' }, { n: 'fechaCreacion', l: 'Fecha de creación', t: 'date', req: true }, { n: 'normaCreacion', l: 'Norma de creación' },
     { n: 'lat', l: 'Latitud de la sede', t: 'number', step: 'any' }, { n: 'lng', l: 'Longitud de la sede', t: 'number', step: 'any' },
     { n: 'fb', l: 'Facebook', t: 'url' }, { n: 'yt', l: 'YouTube', t: 'url' }, { n: 'ig', l: 'Instagram', t: 'url' }, { n: 'tt', l: 'TikTok', t: 'url' },
@@ -2197,7 +2740,7 @@ CUSTOM.config = () => singletonForm({
   onSave: (w, er) => {
     if (w.waOn && !/^\d{9,13}$/.test(w.waNum || '')) er.waNum = 'Número no válido (9 a 13 dígitos).'; if (Object.keys(er).length) return;
     const C = DB.config; const oldName = C.inst.nombre, oldLogo = C.inst.logo; if (C.correoReclamos !== w.correoReclamos) audit('Cambio de parámetro protegido', 'Configuración', 'Correo del Libro de Reclamaciones', `${C.correoReclamos} → ${w.correoReclamos}`);
-    ['nombre', 'nombreCorto', 'logoSigla', 'slogan', 'lema', 'descripcion', 'logo', 'direccion', 'telefono', 'telefonoNota', 'correo', 'horario', 'horarioSab', 'ruc', 'codigoModular', 'fechaCreacion', 'normaCreacion', 'lat', 'lng'].forEach(k => C.inst[k] = w[k]);
+    ['nombre', 'nombreCorto', 'logoSigla', 'slogan', 'lema', 'descripcion', 'logo', 'direccion', 'telefono', 'telefonoNota', 'correo', 'horario', 'horarioSab', 'ruc', 'codigoModular', 'fechaCreacion', 'normaCreacion', 'lat', 'lng', 'distrito', 'region'].forEach(k => C.inst[k] = w[k]);
     if (oldLogo !== w.logo && DB.academico.cfg.docs?.logoIzq?.src === oldLogo) { const preview = document.querySelector('[data-img=logo] img'); DB.academico.cfg.docs.logoIzq = w.logo ? { src: w.logo, w: preview?.naturalWidth || 240, h: preview?.naturalHeight || 310 } : null; }
     C.redes = { ...C.redes, facebook: w.fb, youtube: w.yt, instagram: w.ig, tiktok: w.tt }; C.seo.titulo = w.seoTitulo === C.seo.titulo ? w.seoTitulo.replace(oldName, w.nombre) : w.seoTitulo; C.seo.descripcion = w.seoDesc; C.correoReclamos = w.correoReclamos; C.correoContacto = w.correoContacto;
     C.whatsapp = { numero: w.waNum, mensaje: w.waMsg, activo: w.waOn }; C.limites = { descripcion: +w.limDesc || 1500, pedido: +w.limPed || 1000 }; C.simularFalloCorreo = w.simFail; Object.keys(IMG_CACHE).forEach(k => delete IMG_CACHE[k]);
@@ -2446,7 +2989,7 @@ function mensajeDetalle(id) {
   if (m.estado === 'Nuevo') { m.estado = 'Leído'; m.historial = m.historial || []; m.historial.push({ fecha: nowISO(), usuario: currentUser().usuario, estado: 'Leído' }); audit('Lectura', 'Mensajes de contacto', m.asunto); saveDB(); }
   const html = admHead(m.asunto, `Recibido el ${fdate(m.fecha, true)}`, `<a class="btn ghost" href="#/admin/mensajes">${sic('back')} Volver a la bandeja</a>`, 'mail', [['Mensajes de contacto', '#/admin/mensajes'], ['Detalle']])
     + `<div class="edit-grid"><div class="panel"><h2>Mensaje</h2><div class="pb"><dl class="kv"><dt>Nombres</dt><dd>${esc(m.nombres)}</dd><dt>Correo</dt><dd><a href="mailto:${esc(m.correo)}">${esc(m.correo)}</a></dd><dt>Teléfono</dt><dd>${esc(m.telefono || '—')}</dd>${m.documento ? `<dt>Documento</dt><dd>${esc(canFlag('viewDni') ? m.documento : maskDni(m.documento))}</dd>` : ''}<dt>Programa de interés</dt><dd>${esc((progById(m.programa) || {}).nombre || '—')}</dd></dl><div class="card cb" style="margin-top:12px;white-space:pre-wrap">${esc(m.mensaje)}</div>
-    <h3 style="margin-top:16px">Responder</h3><textarea class="inp" id="mr" rows="4" placeholder="Respuesta institucional; el envío por correo está pendiente.">${esc(m.respuesta || '')}</textarea><p style="margin-top:8px"><button class="btn" data-reply>${sic('send')} Guardar respuesta y marcar atendido</button></p></div></div>
+    <h3 style="margin-top:16px">Responder</h3><textarea class="inp" id="mr" rows="4" placeholder="Respuesta institucional; el aviso se registra en la cola de correo.">${esc(m.respuesta || '')}</textarea><p style="margin-top:8px"><button class="btn" data-reply>${sic('send')} Guardar respuesta y marcar atendido</button></p></div></div>
     <div><div class="panel"><h2>Estado</h2><div class="pb" style="display:grid;gap:8px">${stBadge(m.estado)}<div class="field"><label for="mst">Cambiar estado</label><select id="mst">${['Nuevo', 'Leído', 'Atendido'].map(s => `<option ${s === m.estado ? 'selected' : ''}>${s}</option>`).join('')}</select></div><button class="btn sec" data-st>Actualizar estado</button></div></div><div class="panel"><h2>Historial</h2><div class="pb">${histHTML(m.historial)}</div></div></div></div>`;
   return {
     html, after: () => {
@@ -2464,17 +3007,17 @@ function mensajeDetalle(id) {
 
 /* ---------- Libro de reclamaciones ---------- */
 const LR_STATES = ['Recibido', 'En atención', 'Atendido'];
-const lrTabs = a => tabsBar([['l', 'Reclamaciones', '#/admin/reclamos'], ['n', 'Correo pendiente', '#/admin/reclamos/notificaciones']], a);
+const lrTabs = a => tabsBar([['l', 'Reclamaciones', '#/admin/reclamos'], ['n', 'Notificaciones por correo', '#/admin/reclamos/notificaciones']], a);
 CUSTOM.reclamos = (parts) => {
   if (parts[2] === 'notificaciones') return lrNotif();
   if (parts[2]) return reclamoDetalle(parts[2]);
   const all = coll('reclamos'); const y = String(yearNow());
-  const top = `<div class="kpis">${kpi('book', 'var(--blue)', all.filter(r => r.fecha.startsWith(y)).length, 'Registrados en ' + y)}${kpi('inbox', 'var(--warn)', all.filter(r => r.estado === 'Recibido' && !r.anulado).length, 'Recibidos sin atender')}${kpi('clock', '#6d4bc4', all.filter(r => r.estado === 'En atención' && !r.anulado).length, 'En atención')}${kpi('check', 'var(--ok)', all.filter(r => r.estado === 'Atendido' && !r.anulado).length, 'Atendidos')}${kpi('alert', 'var(--err)', all.filter(r => r.notifInst === 'Error' && !r.anulado).length, 'Notificaciones con error')}</div>`;
+  const top = `<div class="kpis">${kpi('book', 'var(--blue)', all.filter(r => r.fecha.startsWith(y)).length, 'Registrados en ' + y)}${kpi('inbox', 'var(--warn)', all.filter(r => r.estado === 'Recibido' && !r.anulado).length, 'Recibidos sin atender')}${kpi('clock', '#6d4bc4', all.filter(r => r.estado === 'En atención' && !r.anulado).length, 'En atención')}${kpi('check', 'var(--ok)', all.filter(r => r.estado === 'Atendido' && !r.anulado).length, 'Atendidos')}${kpi('alert', 'var(--err)', 'Ver panel', 'Notificaciones SMTP')}</div>`;
   const ib2 = inbox({
     key: 'reclamos', collName: 'reclamos', title: 'Libro de reclamaciones', sub: 'Los registros no pueden eliminarse ni modificarse en su contenido original. Solo se gestiona su atención.', icon: 'book', states: LR_STATES.concat('Anulado'), trash: false, top, tabs: lrTabs('l'),
     filterExtra: [{ n: 'tipo', l: 'Tipo', opts: ['Reclamo', 'Queja'] }], search: r => [r.codigo, r.nombres, r.asunto, r.numDoc].join(' '),
     extraActs: `<button class="btn sec" data-rcsv>${sic('download')} Reporte CSV</button><a class="btn ghost" href="#/servicios/libro-de-reclamaciones" target="_blank">Ver formulario público</a>`,
-    cols: [{ l: 'Código', f: r => `<b>${esc(r.codigo)}</b>` }, { l: 'Fecha', f: r => fshort(r.fecha, true) }, { l: 'Tipo', f: r => esc(r.tipo) }, { l: 'Reclamante', f: r => `${esc(r.nombres)}<br><small>${esc(r.tipoDoc)} ${dniCell(r.numDoc)}</small>` }, { l: 'Asunto', f: r => esc(clamp(r.asunto, 50)) }, { l: 'Notif. institucional', cls: 'c', f: r => stBadge(r.notifInst) }, { l: 'Estado', cls: 'c', f: r => stBadge(r.anulado ? 'Anulado' : r.estado) }, { l: 'Días', cls: 'num', f: r => r.estado === 'Atendido' || r.anulado ? '—' : `<span style="color:${daysAgo(r.fecha) > 10 ? 'var(--err)' : 'inherit'}">${daysAgo(r.fecha)}</span>` }],
+    cols: [{ l: 'Código', f: r => `<b>${esc(r.codigo)}</b>` }, { l: 'Fecha', f: r => fshort(r.fecha, true) }, { l: 'Tipo', f: r => esc(r.tipo) }, { l: 'Reclamante', f: r => `${esc(r.nombres)}<br><small>${esc(r.tipoDoc)} ${dniCell(r.numDoc)}</small>` }, { l: 'Asunto', f: r => esc(clamp(r.asunto, 50)) }, { l: 'Correo', cls: 'c', f: r => 'Ver panel SMTP' }, { l: 'Estado', cls: 'c', f: r => stBadge(r.anulado ? 'Anulado' : r.estado) }, { l: 'Días', cls: 'num', f: r => r.estado === 'Atendido' || r.anulado ? '—' : `<span style="color:${daysAgo(r.fecha) > 10 ? 'var(--err)' : 'inherit'}">${daysAgo(r.fecha)}</span>` }],
   });
   return { html: ib2.html, after: () => { ib2.after(); $('[data-rcsv]').onclick = () => { downloadText(toCSV([['Código', 'Fecha', 'Tipo', 'Reclamante', 'Documento', 'Correo', 'Asunto', 'Estado', 'Notificación institucional', 'Fecha de atención', 'Respuesta']].concat(ib2.rows.map(r => [r.codigo, fshort(r.fecha, true), r.tipo, r.nombres, r.tipoDoc + ' ' + (canFlag('viewDni') ? r.numDoc : maskDni(r.numDoc)), r.correo, r.asunto, r.anulado ? 'Anulado' : r.estado, r.notifInst, r.atendidoEn ? fshort(r.atendidoEn, true) : '', r.respuesta]))), 'reporte_libro_reclamaciones.csv', 'text/csv'); audit('Exportación', 'Libro de reclamaciones', ib2.rows.length + ' registros'); saveDB(); }; } };
 };
@@ -2483,10 +3026,10 @@ function reclamoDetalle(id) {
   const isAdm = currentUser().rol === 'admin';
   const html = admHead(`${r.tipo} ${r.codigo}`, `Registrado el ${fdate(r.fecha, true)} · ${r.anulado ? '<span class="badge err">Anulado</span>' : stBadge(r.estado)}`, `<button class="btn sec" data-pdf>${sic('print')} Hoja de reclamación (PDF)</button><a class="btn ghost" href="#/admin/reclamos">${sic('back')} Volver</a>`, 'book', [['Libro de reclamaciones', '#/admin/reclamos'], [r.codigo]])
     + `<div class="edit-grid"><div style="display:grid;gap:16px"><div class="panel"><h2>Registro original <span class="badge gray">${sic('lock', 12)} Solo lectura</span></h2><div class="pb"><dl class="kv"><dt>Código</dt><dd><b>${esc(r.codigo)}</b></dd><dt>Fecha y hora</dt><dd>${fdate(r.fecha, true)}</dd><dt>Tipo</dt><dd>${esc(r.tipo)}</dd><dt>Reclamante</dt><dd>${esc(r.nombres)}</dd><dt>Documento</dt><dd>${esc(r.tipoDoc)} ${dniCell(r.numDoc)}</dd><dt>Correo</dt><dd>${esc(r.correo)}</dd><dt>Teléfono</dt><dd>${esc(r.telefono || '—')}</dd><dt>Asunto</dt><dd>${esc(r.asunto)}</dd></dl><h3>Descripción del hecho</h3><div class="card cb" style="white-space:pre-wrap">${esc(r.descripcion)}</div><h3>Pedido</h3><div class="card cb" style="white-space:pre-wrap">${esc(r.pedido)}</div>${r.adjunto ? `<p><button class="btn sm sec" data-adj>${sic('download')} Adjunto: ${esc(r.adjunto.original || r.adjunto.nombre)} (${fsize(r.adjunto.size)})</button></p>` : '<p style="color:var(--muted)">Sin archivo adjunto.</p>'}</div></div>
-    <div class="panel"><h2>Respuesta institucional</h2><div class="pb">${r.respuesta ? `<div class="notice ok" style="white-space:pre-wrap">${esc(r.respuesta)}<br><small>Respondido por ${esc(r.atendidoPor || '—')} el ${fshort(r.atendidoEn, true)} · Notificación al usuario: ${esc(r.notifUser)}</small></div>` : ''}${r.anulado ? '' : `<textarea class="inp" id="lr-resp" aria-label="Respuesta al reclamante" rows="5" placeholder="Respuesta institucional; el envío por correo está pendiente.">${esc(r.respuesta || '')}</textarea><p style="margin-top:8px"><button class="btn ok" data-resp>${sic('send')} Guardar respuesta y marcar atendido</button></p>`}</div></div>
+    <div class="panel"><h2>Respuesta institucional</h2><div class="pb">${r.respuesta ? `<div class="notice ok" style="white-space:pre-wrap">${esc(r.respuesta)}<br><small>Respondido por ${esc(r.atendidoPor || '—')} el ${fshort(r.atendidoEn, true)} · Notificación al usuario: Ver panel de correo</small></div>` : ''}${r.anulado ? '' : `<textarea class="inp" id="lr-resp" aria-label="Respuesta al reclamante" rows="5" placeholder="Respuesta institucional; el aviso se registra en la cola de correo.">${esc(r.respuesta || '')}</textarea><p style="margin-top:8px"><button class="btn ok" data-resp>${sic('send')} Guardar respuesta y marcar atendido</button></p>`}</div></div>
     <div class="panel"><h2>Notas internas <small style="font-weight:400;color:var(--muted)">(no visibles para el ciudadano)</small></h2><div class="pb">${(r.notas || []).map(n => `<div class="card cb" style="margin-bottom:8px"><small style="color:var(--muted)">${esc(n.usuario)} · ${fshort(n.fecha, true)}</small><br>${esc(n.texto)}</div>`).join('') || '<p style="color:var(--muted)">Sin notas.</p>'}<div style="display:flex;gap:8px"><input class="inp" id="lr-nota" aria-label="Nueva nota interna" placeholder="Agregar nota interna"><button class="btn sec" data-nota>Agregar</button></div></div></div></div>
     <div style="display:grid;gap:16px;align-content:start"><div class="panel"><h2>Gestión</h2><div class="pb" style="display:grid;gap:10px">${r.anulado ? `<div class="notice err">Registro anulado por ${esc(r.anuladoPor)}: ${esc(r.motivoAnulacion)}</div>` : `<div class="field"><label for="lr-st">Estado</label><select id="lr-st">${LR_STATES.map(s => `<option ${s === r.estado ? 'selected' : ''}>${s}</option>`).join('')}</select></div><div class="field"><label for="lr-sn">Comentario del cambio</label><input id="lr-sn" class="inp"></div><button class="btn" data-st>Actualizar estado</button>${isAdm ? `<button class="btn danger" data-anular>Anular registro</button><small style="color:var(--muted)">La anulación no elimina el registro; queda en el historial y la auditoría.</small>` : ''}`}</div></div>
-    <div class="panel"><h2>Notificaciones</h2><div class="pb meta-list"><span>Al correo institucional: ${stBadge(r.notifInst)}</span>${r.notifInst === 'Error' ? `<button class="btn sm gold" data-retry>${sic('restore')} Reintentar envío</button>` : ''}<span>Constancia al ciudadano: ${stBadge(r.notifUser)}</span><span style="font-size:12px">Destino: ${esc(DB.config.correoReclamos)}</span></div></div>
+    <div class="panel"><h2>Notificaciones</h2><div class="pb"><p>La constancia, las derivaciones y las respuestas se notifican desde el correo central. El administrador puede consultar entregas, errores y reintentos en Configuración de la intranet → Notificaciones por correo.</p></div></div>
     <div class="panel"><h2>Historial de estados</h2><div class="pb">${histHTML(r.historial)}</div></div></div></div>`;
   return {
     html, after: () => {
@@ -2495,17 +3038,13 @@ function reclamoDetalle(id) {
       const adj = $('[data-adj]'); if (adj) adj.onclick = () => { downloadDoc(r.adjunto); audit('Descarga de adjunto', 'Libro de reclamaciones', r.codigo); saveDB(); };
       $('[data-nota]').onclick = () => { const t = $('#lr-nota').value.trim(); if (!t) return; r.notas = r.notas || []; r.notas.push({ fecha: nowISO(), usuario: me, texto: t }); audit('Nota interna', 'Libro de reclamaciones', r.codigo); save('Nota agregada.'); };
       const st = $('[data-st]'); if (st) st.onclick = () => { const v = $('#lr-st').value; if (v === r.estado) return toast('Seleccione un estado diferente.', 'err'); if (v === 'Atendido' && !r.respuesta) return toast('Registre primero la respuesta institucional.', 'err'); r.historial.push({ fecha: nowISO(), usuario: me, estado: v, nota: $('#lr-sn').value.trim() }); audit(`Cambio de estado: ${r.estado} → ${v}`, 'Libro de reclamaciones', r.codigo); r.estado = v; save('Estado actualizado.'); };
-      const rs = $('[data-resp]'); if (rs) rs.onclick = () => { const t = $('#lr-resp').value.trim(); if (t.length < 10) return toast('La respuesta debe tener al menos 10 caracteres.', 'err'); r.respuesta = t; r.atendidoPor = me; r.atendidoEn = nowISO(); r.notifUser = mailOut(r.correo, `Respuesta a su ${r.tipo.toLowerCase()} ${r.codigo}`, t); if (r.estado !== 'Atendido') r.historial.push({ fecha: nowISO(), usuario: me, estado: 'Atendido', nota: 'Respuesta registrada en el portal' }); r.estado = 'Atendido'; audit('Respuesta institucional', 'Libro de reclamaciones', r.codigo, 'Notificación al usuario: ' + r.notifUser); save(r.notifUser === 'Error' ? 'Respuesta registrada, pero falló el envío del correo.' : 'Respuesta registrada. El correo está desactivado.'); };
-      const rt = $('[data-retry]'); if (rt) rt.onclick = () => { r.notifInst = mailOut(DB.config.correoReclamos, `[${r.codigo}] Reenvío de notificación`, `${r.nombres} - ${r.asunto}`); audit('Reintento de notificación', 'Libro de reclamaciones', r.codigo, 'Resultado: ' + r.notifInst); save(r.notifInst === 'Enviado' ? 'Notificación reenviada correctamente.' : 'El envío volvió a fallar. Revise la configuración de correo.'); };
-      const an = $('[data-anular]'); if (an) an.onclick = async () => { const m = await promptBox('Motivo de la anulación (quedará registrado):', { title: 'Anular registro', ok: 'Anular', textarea: true }); if (m == null) return; if (m.trim().length < 5) return toast('Indique el motivo.', 'err'); r.anulado = true; r.anuladoPor = me; r.motivoAnulacion = m.trim(); r.historial.push({ fecha: nowISO(), usuario: me, estado: 'Anulado', nota: m.trim() }); audit('Anulación', 'Libro de reclamaciones', r.codigo, m.trim()); save('Registro anulado.'); };
+      const rs = $('[data-resp]'); if (rs) rs.onclick = () => { const t = $('#lr-resp').value.trim(); if (t.length < 10) return toast('La respuesta debe tener al menos 10 caracteres.', 'err'); r.respuesta = t; r.atendidoPor = me; r.atendidoEn = nowISO();  if (r.estado !== 'Atendido') r.historial.push({ fecha: nowISO(), usuario: me, estado: 'Atendido', nota: 'Respuesta registrada en el portal' }); r.estado = 'Atendido'; audit('Respuesta institucional', 'Libro de reclamaciones', r.codigo, 'Notificación al usuario: ' + r.notifUser); save('Respuesta registrada. El aviso se procesará desde la cola de correo.'); };
+      const an = $('[data-anular]'); if (an) an.onclick = async () => { const m = await promptBox('Motivo de la anulación (quedará registrado):', { title: 'Anular registro', ok: 'Anular', textarea: true }); if (m == null) return; if (m.trim().length < 5) return toast('Indique el motivo.', 'err'); r.anulado = true; r.estado = 'Anulado'; r.anuladoPor = me; r.motivoAnulacion = m.trim(); r.historial.push({ fecha: nowISO(), usuario: me, estado: 'Anulado', nota: m.trim() }); audit('Anulación', 'Libro de reclamaciones', r.codigo, m.trim()); save('Registro anulado.'); };
     }
   };
 }
 function lrNotif() {
-  const rows = coll('correos').filter(c => /LR-|reclam|queja/i.test(c.asunto) || c.para === DB.config.correoReclamos);
-  const html = admHead('Libro de reclamaciones', 'Bitácora de correos generados por el sistema (en producción se envían por SMTP institucional).', '', 'book', [['Libro de reclamaciones', '#/admin/reclamos'], ['Notificaciones']]) + lrTabs('n')
-    + `<div class="panel"><div class="tbl-wrap" style="border:0"><table class="tbl light"><thead><tr><th>Fecha</th><th>Destinatario</th><th>Asunto</th><th class="c">Resultado</th></tr></thead><tbody>${rows.map(c => `<tr><td>${fshort(c.fecha, true)}</td><td>${esc(c.para)}</td><td>${esc(c.asunto)}</td><td class="c">${stBadge(c.estado)}</td></tr>`).join('') || '<tr><td colspan="4"><div class="empty">Aún no se generaron notificaciones.</div></td></tr>'}</tbody></table></div></div>`;
-  return { html };
+ return {html:admHead('Notificaciones del Libro de Reclamaciones','Los avisos se generan en el servidor y se entregan con el correo central.','','book')+lrTabs('n')+'<div class="panel"><div class="pb"><p>Consulta los estados reales y los reintentos en Configuración de la intranet → Notificaciones por correo. Esta bitácora está reservada al administrador.</p></div></div>'};
 }
 
 /* ---------- Mesa de partes virtual ---------- */
@@ -2528,7 +3067,7 @@ function expDetalle(id) {
       const a = $('[data-arch]'); if (a) a.onclick = () => downloadDoc(x.archivo);
       $('[data-xa]').onclick = () => { const v = $('#xa').value; if (!v || v === x.area) return toast('Seleccione un área diferente.', 'err'); const n = 'Derivado a ' + areaName(v); x.area = v; if (x.estado === 'Recibido') x.estado = 'En proceso'; x.historial.push({ fecha: nowISO(), usuario: currentUser().usuario, estado: x.estado, nota: n }); audit('Derivación', 'Mesa de partes', x.numero, n); stamp(x); if (saveDB()) { toast('Expediente derivado.', 'ok'); route(); } };
       $('[data-cargo]').onclick = () => cargoExp(x.id);
-      $('[data-xs]').onclick = () => { const v = $('#xs').value, n = $('#xn').value.trim(); if (v === x.estado && !n) return toast('Seleccione otro estado o escriba una nota.', 'err'); if (v === 'Observado' && !n) return toast('Indique la observación en la nota.', 'err'); x.historial.push({ fecha: nowISO(), usuario: currentUser().usuario, estado: v, nota: n }); audit(`Cambio de estado: ${x.estado} → ${v}`, 'Mesa de partes', x.numero, n); x.estado = v; stamp(x); if ($('#xm').checked) mailOut(x.correo, `Expediente ${x.numero}: ${v}`, n || 'Su expediente cambió de estado.'); if (saveDB()) { toast('Expediente actualizado.', 'ok'); route(); } };
+      $('[data-xs]').onclick = () => { const v = $('#xs').value, n = $('#xn').value.trim(); if (v === x.estado && !n) return toast('Seleccione otro estado o escriba una nota.', 'err'); if (v === 'Observado' && !n) return toast('Indique la observación en la nota.', 'err'); x.historial.push({ fecha: nowISO(), usuario: currentUser().usuario, estado: v, nota: n }); audit(`Cambio de estado: ${x.estado} → ${v}`, 'Mesa de partes', x.numero, n); x.estado = v; if ($('#xm').checked) delete x.sinAviso; else x.sinAviso = true; stamp(x); if ($('#xm').checked) mailOut(x.correo, `Expediente ${x.numero}: ${v}`, n || 'Su expediente cambió de estado.'); if (saveDB()) { toast('Expediente actualizado.', 'ok'); route(); } };
     }
   };
 }
@@ -2563,6 +3102,9 @@ CUSTOM.respaldo = () => ({html:admHead('Respaldos y restauración','Copias compl
 /* ---------- Enrutador del panel ---------- */
 const MOD_OF = { tupacfg: 'tupa', becasimport: 'becas', becasrep: 'becas', popup: 'portada', portada: 'portada' };
 /* ---------- Temas y apariencia (solo el panel elige y edita el tema) ---------- */
+/* Estructuras sin versión oscura y los neutros claros que usan con una combinación oscura (mismos valores que :root en portal.css) */
+const NO_DARK = ['impacto', 'campus', 'horizonte', 'editorial'];
+const LIGHT_NEUTRALS_ALL = { '--page': '#fff', '--card': '#fff', '--card2': '#f6f9fd', '--bg': '#f4f7fb', '--bg2': '#eff3f9', '--white': '#fff', '--ink': '#1b2433', '--ink2': '#4a5568', '--muted': '#5f6b7c', '--line': '#dfe5ee', '--line2': '#c9d5e6', '--ok': '#18794a', '--okbg': '#e3f5ea', '--okink': '#0f5a31', '--warn': '#955800', '--warnbg': '#fff3dc', '--warnink': '#6b4200', '--err': '#c62828', '--errbg': '#fde8e8', '--errink': '#7a1414', '--info': '#1556b8', '--infobg': '#e8f0fc', '--infoink': '#0b3a7e', '--violet': '#5b3cc4', '--violetbg': '#efeafd', '--graybg': '#eef0f3', '--grayink': '#55606e', '--sh': '0 1px 2px rgba(var(--ov),.06),0 4px 14px rgba(var(--ov),.07)', '--sh2': '0 10px 34px rgba(var(--ov),.18)' };
 const DARK_NEUTRALS = { '--page': '#0b1220', '--card': '#121c32', '--card2': '#16223b', '--bg': '#0e1729', '--line': '#24324e', '--ink': '#e4e9f2', '--ink2': '#b4bfd3', '--muted': '#8e9ab0' };
 const LIGHT_NEUTRALS = { '--page': '#ffffff', '--card': '#ffffff', '--ink': '#1b2433', '--ink2': '#4a5568', '--muted': '#5f6b7c' };
 function themeScope(t) {
@@ -2590,44 +3132,77 @@ function themeChecks(t) {
 }
 const checksHTML = t => `<ul class="tm-checks">${themeChecks(t).map(r => `<li><span>${esc(r.l)}</span><b>${r.c.toFixed(1)}:1</b><span class="badge ${r.s[0]}">${r.s[1]}</span></li>`).join('')}</ul>`;
 
+function disenoPanel() {
+  const cur = DISENOS.some(d => d[0] === DB.config.diseno) ? DB.config.diseno : 'clasico';
+  const mock = k => `<div class="ds-mock ds-${k}" aria-hidden="true"><i class="m-top"></i><i class="m-hero"><b></b><b></b></i><i class="m-cards"><b></b><b></b><b></b></i></div>`;
+  const t = themeSafe(DB.config.temas[DB.config.tema]);
+  const mk = `--mk-n:${t.navy};--mk-n2:${t.navy2};--mk-b:${t.blue};--mk-g:${t.gold};--mk-d:${mix(t.navy, '#000000', .55)};--mk-l:${mix(t.blue, '#ffffff', .88)}`;
+  return `<section class="panel ds-panel ap-step"><div class="pb"><h2 class="ap-h"><span class="ap-n">1</span> Estructura de la página</h2><p class="ap-p">Cómo se organiza el sitio público: cabecera, portada y bloques. No cambia los colores ni el contenido.</p>
+    <div class="ds-grid" style="${mk}">${DISENOS.map(([k, l, d]) => `<article class="ds-item${k === cur ? ' on' : ''}">${mock(k)}<div class="tm-body"><h3>${esc(l)} ${k === cur ? '<span class="badge ok">En uso</span>' : ''}</h3><p>${esc(d)}</p><div class="tm-acts">${k === cur ? '' : `<button class="btn sm" data-dis="${k}">${sic('check', 14)} Usar esta estructura</button>`}</div></div></article>`).join('')}</div></div></section>`;
+}
+function impColorPanel(key) {
+  const t = DB.config.temas[DB.config.tema]; const cf = DCFG[key]; const c = impColors(key, t), d = cf.def(t); const label = (DISENOS.find(x => x[0] === key) || [])[1];
+  return `<form class="ds-colors" data-impcol="${key}"><p>Normalmente no hace falta: la estructura «${esc(label)}» ya usa los colores del paso 2. Úselo solo si quiere colores distintos únicamente en esta estructura. «Restablecer» vuelve a los colores del paso 2.</p>
+    <div class="ds-cgrid">${cf.campos.map(([k, l, h]) => `<label class="ds-c"><span><b>${esc(l)}</b><small>${esc(h)}</small></span><input type="color" name="${k}" value="${esc(c[k])}" data-def="${esc(d[k])}"><code>${esc(c[k])}</code></label>`).join('')}</div>
+    <div class="ds-pre"><span>Partir de una combinación:</span>${dPresets(cf).map(([n, v], k) => `<button type="button" class="ds-pb" data-imppre="${k}" title="${esc(n)}">${Object.values(v).slice(0, 3).map(x => `<i style="background:${x}"></i>`).join('')}${esc(n)}</button>`).join('')}</div>
+    <div class="ds-cprev ds-cprev-g" aria-hidden="true">${cf.campos.map(([k, l]) => `<i data-pk="${k}">${esc(l)}</i>`).join('')}</div>
+    <div class="tm-acts"><button class="btn sm" type="submit">${sic('check', 14)} Guardar colores</button><button class="btn sm sec" type="button" data-impreset>Restablecer</button></div></form>`;
+}
 CUSTOM.temas = (parts) => {
   ensureThemes();
   const T = DB.config.temas, act = DB.config.tema;
   if (parts[2]) return temaEditor(parts[2]);
   const keys = Object.keys(T);
-  const html = admHead('Temas y apariencia', 'El tema activo se aplica a todo el portal público y al panel. Los visitantes no pueden cambiarlo.', `<a class="btn" href="#/admin/temas/nuevo">${sic('plus')} Nuevo tema</a>`, 'palette', [['Temas y apariencia']])
-    + `<div class="tm-active panel"><div class="pb">${themeMock(T[act], true)}<div class="tm-active-info"><span class="badge ok">${sic('check', 13)} Tema activo</span><h2>${esc(T[act].label)}</h2><p>${esc(T[act].desc || '')}</p><p class="tm-meta">${esc(T[act].modo === 'oscuro' ? 'Modo oscuro' : 'Modo claro')} · Títulos ${esc(T[act].fh)} · Texto ${esc(T[act].ff)} · Bordes ${+T[act].r}px</p><div class="tm-chips">${['navy', 'navy2', 'blue', 'gold'].map(c => `<span><i style="background:${T[act][c]}"></i>${T[act][c]}</span>`).join('')}</div><p><a class="btn sec" href="#/admin/temas/${act}">${sic('edit')} Editar tema activo</a></p></div></div></div>
-    <div class="tm-grid">${keys.map(k => { const t = T[k], on = k === act; return `<article class="tm-item${on ? ' on' : ''}">${themeMock(t)}<div class="tm-body"><h3>${esc(t.label)} ${on ? '<span class="badge ok">Activo</span>' : ''}${t.base ? '' : ' <span class="badge gray">Personalizado</span>'}</h3><p>${esc(t.desc || '')}</p><div class="tm-acts">${on ? '' : `<button class="btn sm" data-act="${k}">${sic('check', 14)} Activar</button>`}<a class="btn sm sec" href="#/admin/temas/${k}">${sic('edit', 14)} Editar</a><button class="btn sm ghost" data-dup="${k}" title="Duplicar">${sic('copy', 14)}<span class="sr-only">Duplicar ${esc(t.label)}</span></button>${!t.base && !on ? `<button class="btn sm ghost" data-del="${k}" title="Eliminar">${sic('trash', 14)}<span class="sr-only">Eliminar ${esc(t.label)}</span></button>` : ''}</div></div></article>`; }).join('')}</div>`;
+  const cur = DISENOS.some(d => d[0] === DB.config.diseno) ? DB.config.diseno : 'clasico', curLabel = (DISENOS.find(x => x[0] === cur) || [])[1];
+  const custom = !!(DCFG[cur] && DB.config.disenoColores && Object.keys(DB.config.disenoColores[cur] || {}).length);
+  const html = admHead('Apariencia del portal', 'Elija la estructura y los colores del sitio público. Los cambios se aplican a todo el portal y al panel; los visitantes no pueden cambiarlos.', '', 'palette', [['Apariencia del portal']])
+    + disenoPanel()
+    + `<section class="panel ap-step"><div class="pb"><h2 class="ap-h"><span class="ap-n">2</span> Colores y letras</h2><p class="ap-p">Los colores institucionales, las letras y el redondeo de las esquinas. Se aplican a cualquier estructura.</p>
+    <div class="tm-active"><div>${themeMock(T[act], true)}</div><div class="tm-active-info"><span class="badge ok">${sic('check', 13)} En uso</span><h3>${esc(T[act].label)}</h3><p>${esc(T[act].desc || '')}</p><p class="tm-meta">${esc(T[act].modo === 'oscuro' ? 'Modo oscuro' : 'Modo claro')} · Títulos ${esc(T[act].fh)} · Texto ${esc(T[act].ff)} · Esquinas ${+T[act].r}px</p><div class="tm-chips">${[['navy', 'Institucional'], ['blue', 'Botones y enlaces'], ['gold', 'Destacado']].map(([c, l]) => `<span title="${esc(l)}"><i style="background:${T[act][c]}"></i>${esc(l)}</span>`).join('')}</div><p><a class="btn sec" href="#/admin/temas/${act}">${sic('edit')} Cambiar colores y letras</a></p></div></div>
+    <h3 class="ap-sub">Otras combinaciones disponibles</h3>
+    <div class="tm-grid">${keys.filter(k => k !== act).map(k => { const t = T[k]; return `<article class="tm-item">${themeMock(t)}<div class="tm-body"><h3>${esc(t.label)}${t.base ? '' : ' <span class="badge gray">Personalizado</span>'}</h3><p>${esc(t.desc || '')}</p><div class="tm-acts"><button class="btn sm" data-act="${k}">${sic('check', 14)} Usar</button><a class="btn sm sec" href="#/admin/temas/${k}">${sic('edit', 14)} Editar</a><button class="btn sm ghost" data-dup="${k}" title="Duplicar">${sic('copy', 14)}<span class="sr-only">Duplicar ${esc(t.label)}</span></button>${!t.base ? `<button class="btn sm ghost" data-del="${k}" title="Eliminar">${sic('trash', 14)}<span class="sr-only">Eliminar ${esc(t.label)}</span></button>` : ''}</div></div></article>`; }).join('')}</div>
+    <p style="margin:12px 0 0"><a class="btn sm ghost" href="#/admin/temas/nuevo">${sic('plus', 14)} Crear una combinación nueva</a></p></div></section>`
+    + (DCFG[cur] ? `<section class="panel ap-step"><details class="pb ap-adv"${custom ? ' open' : ''}><summary><span class="ap-n">3</span> Opciones avanzadas: colores solo para «${esc(curLabel)}»${custom ? ' <span class="badge warn">Personalizado</span>' : ''}</summary>${impColorPanel(cur)}</details></section>` : '');
   return {
     html, after: () => {
-      $$('[data-act]').forEach(b => b.onclick = () => { const k = b.dataset.act; DB.config.tema = k; audit('Activación de tema', 'Temas y apariencia', T[k].label); if(!saveDB())return; applyTheme(); toast('Tema «' + T[k].label + '» activado en todo el portal.', 'ok'); route(); });
-      $$('[data-dup]').forEach(b => b.onclick = () => { const src = T[b.dataset.dup]; let label = src.label + ' (copia)', n = 2; while (Object.values(T).some(t => t.label === label)) label = src.label + ' (copia ' + n++ + ')'; let k = slugify(label) || 'tema', i = 2; while (T[k] || k === 'nuevo') k = slugify(label) + '-' + i++; T[k] = Object.assign({}, src, { label, base: false }); audit('Creación', 'Temas y apariencia', label, 'Duplicado de ' + src.label); if(!saveDB())return; toast('Tema duplicado. Ya puede editarlo.', 'ok'); go('#/admin/temas/' + k); });
-      $$('[data-del]').forEach(b => b.onclick = async () => { const k = b.dataset.del; if (!await confirmBox(`¿Eliminar el tema <b>${esc(T[k].label)}</b>? Esta acción no se puede deshacer.`, { ok: 'Eliminar' })) return; const l = T[k].label; delete T[k]; audit('Eliminación', 'Temas y apariencia', l); if(!saveDB())return; toast('Tema eliminado.', 'ok'); route(); });
+      const fc = $('[data-impcol]'); if (fc) {
+        const CF = DCFG[fc.dataset.impcol];
+        const prev = () => { CF.campos.forEach(([k]) => { const v = fc.elements[k].value; const chip = $(`[data-pk="${k}"]`, fc); if (chip) { chip.style.background = v; chip.style.color = dOn(v); } }); $$('.ds-c', fc).forEach(l => { $('code', l).textContent = $('input', l).value; }); };
+        fc.addEventListener('input', prev); prev();
+        $$('[data-imppre]', fc).forEach(b => b.onclick = () => { const v = dPresets(CF)[+b.dataset.imppre][1]; CF.campos.forEach(([k]) => { fc.elements[k].value = v[k]; }); prev(); });
+        $('[data-impreset]', fc).onclick = () => { CF.campos.forEach(([k]) => { fc.elements[k].value = fc.elements[k].dataset.def; }); prev(); };
+        fc.onsubmit = e => { e.preventDefault(); const key = fc.dataset.impcol; const out = {}; CF.campos.forEach(([k]) => { const v = fc.elements[k].value.toLowerCase(); if (v !== fc.elements[k].dataset.def.toLowerCase()) out[k] = v; });
+          DB.config.disenoColores = Object.assign({}, DB.config.disenoColores || {}, { [key]: out }); audit('Cambio de colores del diseño', 'Temas y apariencia', key); if (!saveDB()) return; applyTheme(); toast('Colores de la estructura guardados.', 'ok'); route(); };
+      }
+      $$('[data-dis]').forEach(b => b.onclick = () => { const d = DISENOS.find(x => x[0] === b.dataset.dis); DB.config.diseno = d[0]; audit('Cambio de diseño del portal', 'Temas y apariencia', d[1]); if (!saveDB()) return; applyTheme(); toast('Estructura «' + d[1] + '» en uso en todo el portal.', 'ok'); route(); });
+      $$('[data-act]').forEach(b => b.onclick = () => { const k = b.dataset.act; DB.config.tema = k; audit('Activación de tema', 'Temas y apariencia', T[k].label); if(!saveDB())return; applyTheme(); toast('Combinación «' + T[k].label + '» en uso en todo el portal.', 'ok'); route(); });
+      $$('[data-dup]').forEach(b => b.onclick = () => { const src = T[b.dataset.dup]; let label = src.label + ' (copia)', n = 2; while (Object.values(T).some(t => t.label === label)) label = src.label + ' (copia ' + n++ + ')'; let k = slugify(label) || 'tema', i = 2; while (T[k] || k === 'nuevo') k = slugify(label) + '-' + i++; T[k] = Object.assign({}, src, { label, base: false }); audit('Creación', 'Temas y apariencia', label, 'Duplicado de ' + src.label); if(!saveDB())return; toast('Combinación duplicada. Ya puede editarla.', 'ok'); go('#/admin/temas/' + k); });
+      $$('[data-del]').forEach(b => b.onclick = async () => { const k = b.dataset.del; if (!await confirmBox(`¿Eliminar la combinación <b>${esc(T[k].label)}</b>? Esta acción no se puede deshacer.`, { ok: 'Eliminar' })) return; const l = T[k].label; delete T[k]; audit('Eliminación', 'Temas y apariencia', l); if(!saveDB())return; toast('Combinación eliminada.', 'ok'); route(); });
     }
   };
 };
 function temaEditor(key) {
   const T = DB.config.temas, isNew = key === 'nuevo';
-  if (!isNew && !T[key]) return { html: admHead('Tema no encontrado', 'El tema solicitado no existe.', '<a class="btn" href="#/admin/temas">Volver a temas</a>', 'palette', [['Temas y apariencia', '#/admin/temas'], ['No encontrado']]) };
+  if (!isNew && !T[key]) return { html: admHead('Combinación no encontrada', 'La combinación de colores solicitada no existe.', '<a class="btn" href="#/admin/temas">Volver a Apariencia</a>', 'palette', [['Apariencia del portal', '#/admin/temas'], ['No encontrado']]) };
   if (!ADM.work || ADM.work._tema !== key) ADM.work = Object.assign({ _tema: key }, isNew ? Object.assign({}, T[DB.config.tema], { label: '', desc: '', base: false }) : T[key]);
   const w = ADM.work, isAct = key === DB.config.tema, orig = THEME_DEFAULTS[key];
   const color = (c, l, h) => `<div class="field tm-color"><label for="tc-${c}">${l}</label><div class="tm-cin"><input type="color" id="tc-${c}" data-c="${c}" value="${esc(w[c])}" aria-label="${l}: selector"><input class="tm-hex" data-hex="${c}" value="${esc(w[c])}" maxlength="7" aria-label="${l}: código hexadecimal" spellcheck="false"></div><div class="hint">${h}</div></div>`;
   const opts = (o, v) => Object.keys(o).map(k => `<option ${k === v ? 'selected' : ''}>${k}</option>`).join('');
-  const title = isNew ? 'Nuevo tema' : 'Editar tema: ' + T[key].label;
-  const html = admHead(title, isAct ? 'Este es el <b>tema activo</b>: al guardar, el cambio se verá de inmediato en todo el portal.' : 'Los cambios se ven en la vista previa. El portal no cambia hasta que guarde y active el tema.', '<a class="btn ghost" href="#/admin/temas">Cancelar</a>', 'palette', [['Temas y apariencia', '#/admin/temas'], [isNew ? 'Nuevo' : T[key].label]])
+  const title = isNew ? 'Nueva combinación de colores' : 'Colores y letras: ' + T[key].label;
+  const html = admHead(title, isAct ? 'Esta es la combinación <b>en uso</b>: al guardar, el cambio se verá de inmediato en todo el portal.' : 'Los cambios se ven en la vista previa. El portal no cambia hasta que guarde y use esta combinación.', '<a class="btn ghost" href="#/admin/temas">Cancelar</a>', 'palette', [['Apariencia del portal', '#/admin/temas'], [isNew ? 'Nuevo' : T[key].label]])
     + `<form data-tf novalidate class="edit-grid tm-edit"><div>
       <div class="panel"><h2>Identificación</h2><div class="pb"><div class="form-grid">
-        <div class="field"><label for="tf-l">Nombre del tema *</label><input id="tf-l" name="label" value="${esc(w.label)}" maxlength="40" required></div>
+        <div class="field"><label for="tf-l">Nombre de la combinación *</label><input id="tf-l" name="label" value="${esc(w.label)}" maxlength="40" required></div>
         <div class="field"><label for="tf-d">Descripción</label><input id="tf-d" name="desc" value="${esc(w.desc || '')}" maxlength="80"></div>
         <fieldset class="field full tm-modo"><legend class="lbl">Modo</legend><label><input type="radio" name="modo" value="claro" ${w.modo !== 'oscuro' ? 'checked' : ''}> Claro</label><label><input type="radio" name="modo" value="oscuro" ${w.modo === 'oscuro' ? 'checked' : ''}> Oscuro</label></fieldset>
       </div></div></div>
       <div class="panel"><h2>Colores</h2><div class="pb"><div class="form-grid">
-        ${color('navy', 'Color principal', 'Cabecera, pie de página, títulos y menú lateral del panel.')}
-        ${color('navy2', 'Color principal secundario', 'Degradados de la franja superior y los banners.')}
-        ${color('blue', 'Color de acento', 'Botones, enlaces, íconos y gráficos.')}
+        ${color('navy', 'Color institucional', 'Cabecera, pie de página, títulos y menú lateral del panel.')}
+        ${color('navy2', 'Segundo tono del color institucional', 'Degradados de la franja superior y de los banners.')}
+        ${color('blue', 'Color de botones y enlaces', 'Botones, enlaces, íconos y gráficos.')}
         ${color('gold', 'Color destacado', 'Botones dorados, subrayados y detalles del logotipo.')}
       </div></div></div>
-      <div class="panel"><h2>Tipografía y forma</h2><div class="pb"><div class="form-grid">
+      <div class="panel"><h2>Letras y esquinas</h2><div class="pb"><div class="form-grid">
         <div class="field"><label for="tf-fh">Letra de los títulos</label><select id="tf-fh" name="fh">${opts(THEME_FONTS, w.fh)}</select></div>
         <div class="field"><label for="tf-ff">Letra del texto</label><select id="tf-ff" name="ff">${opts(BODY_FONTS, w.ff)}</select></div>
         <div class="field full"><label for="tf-r">Redondeo de esquinas: <b data-rv>${+w.r}px</b></label><input id="tf-r" type="range" name="r" min="0" max="20" step="1" value="${+w.r}"></div>
@@ -2637,7 +3212,7 @@ function temaEditor(key) {
       <div class="panel"><h2>Legibilidad</h2><div class="pb" data-chk>${checksHTML(w)}<p class="hint" style="font-size:12px;color:var(--muted);margin:8px 0 0">Referencia WCAG 2.1: 4.5:1 para texto normal.</p></div></div>
       <div class="panel"><div class="pb tm-save">
         <button class="btn" data-save="0">${sic('check')} Guardar</button>
-        ${isAct ? '' : `<button class="btn gold" data-save="1">${sic('palette')} Guardar y activar</button>`}
+        ${isAct ? '' : `<button class="btn gold" data-save="1">${sic('palette')} Guardar y usar en el portal</button>`}
         ${orig ? `<button type="button" class="btn ghost" data-reset>${sic('restore')} Restaurar valores originales</button>` : ''}
       </div></div>
     </aside></form>`;
@@ -2658,8 +3233,8 @@ function temaEditor(key) {
       $$('[data-save]').forEach(b => b.onclick = async () => {
         $$('.field.invalid', f).forEach(x => x.classList.remove('invalid')); $$('.errmsg', f).forEach(x => x.remove());
         const label = (w.label || '').trim(); let err = '';
-        if (!label) err = 'Ingrese el nombre del tema.';
-        else if (Object.entries(T).some(([k, t]) => k !== key && t.label.toLowerCase() === label.toLowerCase())) err = 'Ya existe un tema con ese nombre.';
+        if (!label) err = 'Ingrese el nombre de la combinación.';
+        else if (Object.entries(T).some(([k, t]) => k !== key && t.label.toLowerCase() === label.toLowerCase())) err = 'Ya existe una combinación con ese nombre.';
         if (err) { const fl = $('#tf-l').closest('.field'); fl.classList.add('invalid'); fl.insertAdjacentHTML('beforeend', `<div class="errmsg">${err}</div>`); $('#tf-l').focus(); return; }
         if (['navy', 'navy2', 'blue', 'gold'].some(c => !validHex(w[c]))) { toast('Revise los códigos de color: deben tener el formato #RRGGBB.', 'err'); return; }
         if (themeChecks(w).some(x => x.c < 3) && !await confirmBox('Algunas combinaciones de color tienen contraste insuficiente y pueden ser difíciles de leer. ¿Guardar de todos modos?', { ok: 'Guardar igual', danger: false })) return;
@@ -2670,7 +3245,7 @@ function temaEditor(key) {
         if (activate) { DB.config.tema = k; audit('Activación de tema', 'Temas y apariencia', label); }
         if(!saveDB())return;
         if (k === DB.config.tema) applyTheme();
-        ADM.work = null; toast(activate ? 'Tema guardado y activado en todo el portal.' : k === DB.config.tema ? 'Tema guardado. El portal ya muestra los cambios.' : 'Tema guardado.', 'ok'); go('#/admin/temas');
+        ADM.work = null; toast(activate ? 'Combinación guardada y en uso en todo el portal.' : k === DB.config.tema ? 'Combinación guardada. El portal ya muestra los cambios.' : 'Combinación guardada.', 'ok'); go('#/admin/temas');
       });
     }
   };
@@ -2705,11 +3280,12 @@ function ixWrap(inner) { const l = document.getElementById('ix-layer'); if (l) l
 const businessDaysLeft = (fromISO, days) => { const d = new Date(String(fromISO).slice(0, 10) + 'T12:00:00'); let k = 0; while (k < days) { d.setDate(d.getDate() + 1); if (![0, 6].includes(d.getDay())) k++; } const t = new Date(); t.setHours(12, 0, 0, 0); let n = 0; const s = t <= d ? 1 : -1; const c = new Date(t); while (c.toDateString() !== d.toDateString()) { c.setDate(c.getDate() + s); if (![0, 6].includes(c.getDay())) n += s; } return { due: d, left: n }; };
 const IXHOST = {
   loadAcad: () => DB.academico || null,
+  inst: () => (DB.config && DB.config.inst) || {},
   saveAcad: a => { DB.academico = a; return saveDB(); },
   openBackups: () => {location.href='/respaldos.php';},
   toast: m => toast(m),
   audit: (a, m, d) => audit(a, m, d),
-  head: (title, desc, actions, code) => { const t = String(title).replace(/<[^>]+>/g, ''), c = code || ''; const grp = /administrativa/.test(c) ? 'Servicios' : /Configuraci/.test(c) ? 'Configuración y seguridad' : 'Gestión académica'; const icon = { 'Programación de horarios': 'calendar', 'Maestro de alumnos': 'users', 'Constancias y certificados': 'award', 'Grados y títulos': 'grad', 'Bolsa laboral': 'briefcase', 'Configuración académica': 'gear' }[t] || 'grad'; return admHead(t, desc || '', actions || '', icon, [[grp], [t]]); },
+  head: (title, desc, actions, code) => { const t = String(title).replace(/<[^>]+>/g, ''), c = code || ''; const grp = /administrativa/.test(c) ? 'Servicios' : /Configuraci/.test(c) ? 'Configuración y seguridad' : 'Gestión académica'; const icon = { 'Programación de horarios': 'calendar', 'Maestro de alumnos': 'users', 'Constancias y certificados': 'award', 'Grados y títulos': 'grad', 'Bolsa laboral': 'briefcase', 'Configuración académica': 'gear', 'Configuración académica general':'gear', 'Certificación modular':'award' }[t] || 'grad'; return admHead(t, desc || '', actions || '', icon, [[grp], [t]]); },
   user: () => { const u = currentUser(); const r = u && IX_ROLE[u.rol]; return r ? { id: u.ixId || u.id, u: u.usuario, nom: u.nombre, rol: r, estado: u.estado, dni: u.dni || '', area: u.area || '', vin: u.vin || '', ult: u.ultimoAcceso || '' } : null; },
   users: () => coll('usuarios').filter(u => IX_ROLE[u.rol]).map(u => ({ id: u.ixId || u.id, u: u.usuario, nom: u.nombre, rol: IX_ROLE[u.rol], estado: u.estado, dni: u.dni || '', area: u.area || '', vin: u.vin || '', ult: u.ultimoAcceso || '' })),
   createStudentAccount: e => {
@@ -2804,11 +3380,13 @@ function countVisit() {
   if (PREVIEW) return; DB.visitas = DB.visitas || {}; const d = new Date().toISOString().slice(0, 10);
   DB.visitas[d] = (DB.visitas[d] || 0) + 1;
 }
-let LAST_PATH = null;
+let LAST_PATH = null, LAST_PAGE = null;
 function route() {
+  clearInterval(window.__sl);
+  if (window.__publicReveal) { window.__publicReveal.disconnect(); window.__publicReveal = null; }
   const raw = location.hash.replace(/^#\/?/, ''); const [p, qs] = raw.split('?');
   const parts = (p || '').split('/').filter(Boolean); const q = new URLSearchParams(qs || '');
-  const app = document.getElementById('app'); const samePath = LAST_PATH === p; LAST_PATH = p;
+  const app = document.getElementById('app'); const samePath = LAST_PATH === p; LAST_PATH = p; const pageChanged = samePath && LAST_PAGE !== q.get('page'); LAST_PAGE = q.get('page');
   if (!samePath) { ADM.work = null; $$('.modal-bg').forEach(m => m.remove()); if (IX) IX.close(); }
   $$('.chart-tip').forEach(t => t.style.display = 'none');
   let out;
@@ -2823,6 +3401,7 @@ function route() {
   if (parts[0] !== 'admin') bindPublicChrome();
   if (out.after) try { out.after(); } catch (e) { console.error(e); }
   if (!samePath) { window.scrollTo(0, 0); const h = $('h1', app); if (h && document.activeElement === document.body) h.setAttribute('tabindex', '-1'); }
+  else if (pageChanged) { const top = $('h1', app) || app; top.scrollIntoView({ block: 'start' }); }
   if (!parts.length) maybePopup();
 }
 function seedVisits() {

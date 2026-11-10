@@ -9,7 +9,10 @@ const MPV_TIPOS = ['Solicitud', 'Oficio', 'Carta', 'Informe', 'Memorando', 'Recu
 const MPV_PLAZOS = { 'Solicitud': 10, 'Oficio': 7, 'Carta': 7, 'Informe': 7, 'Memorando': 5, 'Recurso administrativo': 30, 'Reclamo': 15, 'Queja': 3, 'Denuncia': 30, 'Declaración jurada': 5, 'FUT (Formulario Único de Trámite)': 10, 'Expediente administrativo': 30, 'Otros': 10 };
 const MPV_FORMATOS = [['pdf', 'PDF'], ['doc', 'DOC'], ['docx', 'DOCX'], ['xls', 'XLS'], ['xlsx', 'XLSX'], ['jpg', 'JPG'], ['jpeg', 'JPEG'], ['png', 'PNG']];
 const MIME_OK = { pdf: ['application/pdf'], doc: ['application/msword'], docx: ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'], xls: ['application/vnd.ms-excel'], xlsx: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'], jpg: ['image/jpeg'], jpeg: ['image/jpeg'], png: ['image/png'] };
-const FERIADOS_2026 = ['2026-01-01', '2026-04-02', '2026-04-03', '2026-05-01', '2026-06-07', '2026-06-29', '2026-07-23', '2026-07-28', '2026-07-29', '2026-08-06', '2026-08-30', '2026-10-08', '2026-11-01', '2026-12-08', '2026-12-09', '2026-12-25'];
+/* Feriados nacionales del Perú (fijos + Jueves y Viernes Santo) para cualquier año; los de la institución o región se agregan en la configuración. */
+const feriadosPeru = y => { const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451), mo = Math.floor((h + l - 7 * m + 114) / 31), da = ((h + l - 7 * m + 114) % 31) + 1;
+  const p = n => String(n).padStart(2, '0'), easter = new Date(Date.UTC(y, mo - 1, da)), off = n => { const x = new Date(easter); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+  return ['01-01', '05-01', '06-07', '06-29', '07-23', '07-28', '07-29', '08-06', '08-30', '10-08', '11-01', '12-08', '12-09', '12-25'].map(x => y + '-' + x).concat([off(-3), off(-2)]).sort(); };
 const LR_DEF = { responsable: 'Responsable de Administración', cargo: 'Jefa de Área de Administración', correo: '', plazoReclamo: 15, plazoQueja: 15, alerta: 3, areaInicial: 'ADM',
   flujo: 'El reclamo o queja se registra en el Libro de Reclamaciones Virtual y se notifica al responsable institucional. El responsable lo deriva al área competente, que lo atiende y propone la respuesta. El responsable remite la respuesta al usuario por correo electrónico dentro del plazo. Todo el recorrido queda en el historial.' };
 const BOLSA_DEF = { responsable: 'Unidad de Bienestar y Empleabilidad', jefe: 'Jefe(a) de la Unidad de Bienestar y Empleabilidad', correo: '',
@@ -19,7 +22,7 @@ function pzEnsure() {
   if (!DB || !DB.config) return;
   const c = DB.config; c.contadores = c.contadores || {};
   ['LR', 'EXP', 'MPV', 'DOC', 'RCL'].forEach(k => { c.contadores[k] = c.contadores[k] || {}; });
-  c.mpv = Object.assign({ horaIni: '08:00', horaFin: '15:40', dias: 'Lunes a viernes', maxMB: 40, maxArchivos: 5, tipos: MPV_TIPOS.slice(), formatos: MPV_FORMATOS.map(f => f[0]), feriados: FERIADOS_2026.slice(), plazos: Object.assign({}, MPV_PLAZOS), correo: 'iestp@iestppisco.edu.pe', telefono: '056 632122', prefijo: 'MPV-IESTP-PISCO' }, c.mpv || {});
+  c.mpv = Object.assign({ horaIni: '08:00', horaFin: '15:40', dias: 'Lunes a viernes', maxMB: 40, maxArchivos: 5, tipos: MPV_TIPOS.slice(), formatos: MPV_FORMATOS.map(f => f[0]), feriados: [], plazos: Object.assign({}, MPV_PLAZOS), correo: 'iestp@iestppisco.edu.pe', telefono: '056 632122', prefijo: 'MPV-IESTP-PISCO' }, c.mpv || {});
   c.lr = Object.assign({}, LR_DEF, c.lr || {});
   c.bolsa = Object.assign({}, BOLSA_DEF, c.bolsa || {});
   Object.assign(EXP_PLAZOS, c.mpv.plazos);
@@ -27,7 +30,7 @@ function pzEnsure() {
   if (!LR_STATES.includes('Derivado')) LR_STATES.splice(1, 0, 'Derivado');
   /* Compatibilidad de enlaces de instalaciones anteriores; el contenido institucional se importa por separado. */
   if (!c.enlacesV2 && Array.isArray(DB.enlaces)) { const E = id => DB.enlaces.find(x => x.id === id);
-    const set = (id, url) => { const e = E(id); if (e && (!e.url || /ica\.bibliotecalatina|www\.dreica\.gob\.pe\/?$/.test(e.url))) Object.assign(e, { url, estado: 'Activo', verificado: '2026-10-23' }); };
+    const set = (id, url) => { const e = E(id); if (e && e.url && /ica\.bibliotecalatina|www\.dreica\.gob\.pe\/?$/.test(e.url)) Object.assign(e, { url, estado: 'Activo', verificado: '2026-10-23' }); };
     set('biblioteca', ''); set('aula', ''); set('dre', 'https://dreica.gob.pe/ica'); c.enlacesV2 = true; }
 }
 window.pzEnsure = pzEnsure;
@@ -44,7 +47,7 @@ window.pzMail = (para, asunto, cuerpo) => { if (para) mailOut(para, asunto, cuer
 const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const hm = s => { const [h, m] = String(s || '0:0').split(':').map(Number); return h * 60 + (m || 0); };
 const fmt12 = s => { const [h, m] = String(s).split(':').map(Number); const ap = h >= 12 ? 'p.m.' : 'a.m.'; const hh = h % 12 || 12; return `${pad(hh)}:${pad(m || 0)} ${ap}`; };
-const isHabil = d => ![0, 6].includes(d.getDay()) && !(mpvCfg().feriados || []).includes(ymd(d));
+const isHabil = d => ![0, 6].includes(d.getDay()) && !(mpvCfg().feriados || []).includes(ymd(d)) && !feriadosPeru(d.getFullYear()).includes(ymd(d));
 const horarioTxt = () => { const c = mpvCfg(); return `${c.dias} de ${fmt12(c.horaIni)} a ${fmt12(c.horaFin)}`; };
 /* Regla institucional: dentro del horario se recibe en el acto; antes de la hora de inicio, ese mismo día a la hora de inicio;
    después del cierre, en sábado, domingo o feriado, el siguiente día hábil a la hora de inicio. */
@@ -154,7 +157,8 @@ const MPV_ESTADOS_PUB = { Recibido: 'Recibido por Mesa de Partes', Derivado: 'De
 function horarioBox(compact) {
   const c = mpvCfg(); const now = new Date(); const r = recepcionDe(now.toISOString());
   const st = r.enHorario ? `<span class="pz-live ok">● En horario de atención: tu documento se recibe en este momento.</span>` : `<span class="pz-live off">● Fuera del horario de atención: puedes registrar tu documento; se considerará recibido el <b>${fdate(r.fecha, true)}</b>.</span>`;
-  return `<section class="pz-horario ${compact ? 'compact' : ''}" aria-label="Horario de atención de la Mesa de Partes Virtual"><div class="pz-h-ic">${ic('clock')}</div><div><span class="pz-k">Horario de atención</span><b>${esc(c.dias)}</b><b class="pz-hh">${fmt12(c.horaIni)} – ${fmt12(c.horaFin)}</b>${st}</div></section>`;
+  if (compact) return `<section class="pz-horario compact" aria-label="Horario de atención de la Mesa de Partes Virtual"><div class="pz-h-ic">${ic('clock')}</div><div><span class="pz-k">Horario de atención · ${esc(c.dias)}</span><b class="pz-hh">${fmt12(c.horaIni)} – ${fmt12(c.horaFin)}</b>${st}</div></section>`;
+  return `<section class="pz-horario" aria-label="Horario de atención de la Mesa de Partes Virtual"><div class="pz-h-ic">${ic('clock')}</div><div><span class="pz-k">Horario de atención</span><b>${esc(c.dias)}</b><b class="pz-hh">${fmt12(c.horaIni)} – ${fmt12(c.horaFin)}</b>${st}</div></section>`;
 }
 function mpvForm() {
   const c = mpvCfg(); const exts = c.formatos;
@@ -168,15 +172,15 @@ function mpvForm() {
     <div class="field full" data-jur hidden><label for="mv-rs">Razón social / nombre de la entidad <span class="req">*</span></label><input id="mv-rs" name="razon" maxlength="150"></div>
     <div class="field"><label for="mv-e">Correo electrónico (notificaciones) <span class="req">*</span></label><input id="mv-e" name="correo" type="email" maxlength="120" autocomplete="email"></div>
     <div class="field"><label for="mv-t">Teléfono / celular <span class="req">*</span></label><input id="mv-t" name="telefono" maxlength="15" inputmode="tel" autocomplete="tel"></div>
-    <div class="field full"><label for="mv-dir">Dirección (opcional)</label><input id="mv-dir" name="direccion" maxlength="160" autocomplete="street-address"></div>
+    <div class="field full w2"><label for="mv-dir">Dirección (opcional)</label><input id="mv-dir" name="direccion" maxlength="160" autocomplete="street-address"></div>
    </div>
    <div class="pz-sec-h"><span>2</span><h2>Datos del documento</h2></div><div class="form-grid">
     <div class="field"><label for="mv-tt">Tipo de documento a presentar <span class="req">*</span></label><select id="mv-tt" name="tipoTramite"><option value="">Seleccione</option>${mpvTipos().map(t => `<option>${esc(t)}</option>`).join('')}</select></div>
     <div class="field"><label for="mv-ref">N.º o referencia de su documento</label><input id="mv-ref" name="docRef" maxlength="80" placeholder="Ej.: Oficio N.º 012-2026-MPP"></div>
+    <div class="field"><label for="mv-fo">N.º de folios <span class="req">*</span></label><input id="mv-fo" name="folios" type="number" min="1" max="2000" value="1"></div>
     <div class="field full"><label for="mv-ar">Área de destino <span class="req">*</span></label><select id="mv-ar" name="areaDestino">${areaOptions('', { skipMP: true })}</select><div class="hint" data-arhint>La Mesa de Partes Virtual recibe el documento y lo deriva al área seleccionada.</div></div>
     <div class="field full"><label for="mv-as">Asunto <span class="req">*</span></label><textarea id="mv-as" name="asunto" maxlength="600" style="min-height:76px" data-count></textarea><div class="hint"><span data-c>0</span>/600 caracteres</div></div>
-    <div class="field"><label for="mv-fo">N.º de folios <span class="req">*</span></label><input id="mv-fo" name="folios" type="number" min="1" max="2000" value="1"></div>
-    <div class="field"><label for="mv-ob">Observaciones (opcional)</label><input id="mv-ob" name="observaciones" maxlength="250"></div>
+    <div class="field full"><label for="mv-ob">Observaciones (opcional)</label><input id="mv-ob" name="observaciones" maxlength="250"></div>
    </div>
    <div class="pz-sec-h"><span>3</span><h2>Archivos adjuntos</h2></div>
     <div class="field"><label for="mv-x">Documento principal y anexos <span class="req">*</span></label><input id="mv-x" type="file" name="archivos" multiple accept="${exts.map(e => '.' + e).join(',')}"><div class="hint">Formatos permitidos: ${exts.map(e => e.toUpperCase()).join(', ')} · tamaño máximo ${c.maxMB} MB por archivo · hasta ${c.maxArchivos} archivos.</div><ul class="pz-files" data-files></ul></div>
@@ -184,27 +188,27 @@ function mpvForm() {
     <div class="field"><label class="check"><input type="checkbox" name="declaro"> <span>Declaro que la información y los documentos presentados son veraces (principio de presunción de veracidad, Ley N.º 27444) y acepto ser notificado al correo electrónico registrado. <span class="req">*</span></span></label></div>
     <div class="field"><label class="check"><input type="checkbox" name="acepto"> <span>Acepto la <a href="#/politica-de-privacidad" target="_blank">Política de Privacidad</a> y el tratamiento de mis datos personales (Ley N.º 29733). <span class="req">*</span></span></label></div>
     ${captchaHTML('cap-mpv')}
+    <div class="mpv-progress" data-mpv-progress role="status" aria-live="polite" aria-atomic="true" hidden><span class="mpv-spinner" aria-hidden="true"></span><div><strong>Registrando trámite, espera un momento…</strong><p data-mpv-step></p><small>No cierres esta página ni vuelvas a enviar el formulario.</small></div></div>
     <div class="pz-actions"><button type="reset" class="btn ghost">Limpiar</button><button class="btn" data-send>${S16('send')} Registrar y obtener cargo</button></div>
   </form>`;
 }
 function mpvConsulta() {
-  return `<form class="card cb pz-qf" data-mpvq novalidate><div class="pz-qf-h">${sic('search', 20)}<div><h2>Consultar el estado de mi expediente</h2><small>Ingresa el N.º de expediente de tu cargo y tu DNI/RUC o el código de verificación.</small></div></div><div class="form-grid"><div class="field"><label for="mq-n">N.º de expediente</label><input id="mq-n" name="numero" placeholder="${esc(mpvCfg().prefijo)}-${yearNow()}-000001" autocomplete="off"></div><div class="field"><label for="mq-d">N.º de documento de identidad o código de verificación</label><input id="mq-d" name="doc" placeholder="DNI/RUC o código del cargo" autocomplete="off"></div><div class="full"><button class="btn sec">${S16('search')} Consultar estado</button></div></div><div id="mq-r"></div></form>`;
+  return `<form class="card cb pz-qf" data-mpvq novalidate><div class="pz-qf-h">${sic('search', 20)}<div><h2>Consultar el estado de mi expediente</h2><small>Ingresa el N.º de expediente de tu cargo y tu DNI/RUC o el código de verificación.</small></div></div><div class="form-grid"><div class="field"><label for="mq-n">N.º de expediente</label><input id="mq-n" name="numero" placeholder="${esc(mpvCfg().prefijo)}-${yearNow()}-${pad(1,mpvCfg().digitos||6)}" autocomplete="off"></div><div class="field"><label for="mq-d">N.º de documento de identidad o código de verificación</label><input id="mq-d" name="doc" placeholder="DNI/RUC o código del cargo" autocomplete="off"></div><div class="full"><button class="btn sec">${S16('search')} Consultar estado</button></div></div><div id="mq-r"></div></form>`;
 }
 function mpvInfo() {
   const c = mpvCfg(); const as = areasAll().filter(a => a.activo);
-  return `<section class="card cb" style="padding:20px"><h2 style="font-size:18px;margin-top:0">¿Cómo funciona?</h2><ol class="pz-steps"><li><b>Registra</b> tus datos, el tipo de documento, el área de destino y adjunta tus archivos.</li><li><b>Recibe</b> al instante tu N.º de expediente (${esc(c.prefijo)}-AAAA-NNNNNN), tu N.º de documento (DOC-AAAA-NNNNNN) y el cargo de recepción en PDF.</li><li><b>Mesa de Partes</b> deriva tu documento al área competente. Consulta las novedades en el seguimiento; el envío por correo está pendiente de habilitación.</li><li><b>Consulta</b> el estado en cualquier momento con tu N.º de expediente y tu DNI/RUC o el código de verificación.</li></ol>
+  return `<section class="card cb" style="padding:20px"><h2 style="font-size:18px;margin-top:0">¿Cómo funciona?</h2><ol class="pz-steps"><li><b>Registra</b> tus datos, el tipo de documento, el área de destino y adjunta tus archivos.</li><li><b>Recibe</b> al instante tu N.º de expediente (${esc(c.prefijo)}-AAAA-NNNNNN), tu N.º de documento (DOC-AAAA-NNNNNN) y el cargo de recepción en PDF.</li><li><b>Mesa de Partes</b> deriva tu documento al área competente. Consulta las novedades en el seguimiento. La confirmación de registro se envía por correo cuando el servicio está habilitado.</li><li><b>Consulta</b> el estado en cualquier momento con tu N.º de expediente y tu DNI/RUC o el código de verificación.</li></ol>
    <h3>Tipos de documento admitidos y plazos referenciales</h3><div class="tbl-wrap"><table class="tbl light no-rt"><thead><tr><th>Tipo de documento</th><th class="num">Plazo (días hábiles)</th></tr></thead><tbody>${mpvTipos().map(t => `<tr><td>${esc(t)}</td><td class="num">${mpvPlazo(t)}</td></tr>`).join('')}</tbody></table></div>
    <h3>Recepción fuera del horario</h3><p>Puedes registrar documentos las 24 horas. Los presentados después de las ${fmt12(c.horaFin)}, en sábado, domingo o feriado se consideran recibidos el <b>siguiente día hábil a las ${fmt12(c.horaIni)}</b>; los presentados antes de las ${fmt12(c.horaIni)} de un día hábil, ese mismo día a las ${fmt12(c.horaIni)}. El cargo indica la fecha y hora exacta de presentación y la de recepción administrativa.</p>
+   <h3>Contacto</h3><p>✉️ <a href="mailto:${esc(c.correo)}">${esc(c.correo)}</a> · 📞 ${esc(c.telefono)} (Secretaría de Dirección) · 📍 ${esc(inst().direccion)}</p>
    <h3>Áreas receptoras</h3><div class="tbl-wrap"><table class="tbl light"><thead><tr><th>Nivel</th><th>Área / cargo / órgano</th><th>Correo institucional</th></tr></thead><tbody>${as.map(a => `<tr><td>${esc(a.nivel || '')}</td><td>${esc(a.nombre)}</td><td><a href="mailto:${esc(a.correo)}">${esc(a.correo)}</a></td></tr>`).join('')}</tbody></table></div></section>`;
 }
 R('servicios/mesa-de-partes', (path, q0) => {
   const c = mpvCfg(); const t0 = q0 && q0.get && q0.get('tab'); const cur = t0 === 'consulta' || (q0 && q0.get && q0.get('exp')) ? 'c' : t0 === 'info' ? 'i' : 'n';
-  const body = `${svNav('mesa-de-partes')}${svHead('mpv', [['file', `${mpvTipos().length} tipos de documento`], ['upload', `Hasta ${c.maxArchivos} archivos de ${c.maxMB} MB`], ['shield', 'Cargo en PDF con código QR']])}
-   ${horarioBox()}
-   ${svSteps([['Registra', 'Tus datos, el documento y los archivos.'], ['Recibe tu cargo', 'N.º de expediente y cargo en PDF al instante.'], ['Derivación', 'Mesa de Partes lo envía al área competente.'], ['Consulta', 'Sigue el estado con tu N.º de expediente.']])}
+  const body = `${svNav('mesa-de-partes')}<div class="pz-mpv-top">${svHead('mpv', null, true)}${horarioBox(true)}</div>
    ${svTabs([['n', 'send', 'Nuevo trámite'], ['c', 'search', 'Consultar expediente'], ['i', 'book', 'Información']], cur)}
    <div data-pane="n" ${cur === 'n' ? '' : 'hidden'}>${mpvForm()}</div><div data-pane="c" ${cur === 'c' ? '' : 'hidden'}>${mpvConsulta()}</div><div data-pane="i" ${cur === 'i' ? '' : 'hidden'}>${mpvInfo()}</div>`;
-  const side = `<section class="side-box"><h2>Contacto</h2><div class="pad" style="font-size:13.5px">✉️ <a href="mailto:${esc(c.correo)}">${esc(c.correo)}</a><br>📞 ${esc(c.telefono)} (Secretaría de Dirección)<br>📍 ${esc(inst().direccion)}</div></section><section class="side-box"><h2>Numeración</h2><div class="pad" style="font-size:13px">Expediente: <b class="mono">${esc(c.prefijo)}-${yearNow()}-000001</b><br>Documento: <b class="mono">DOC-${yearNow()}-000001</b><br><span style="color:var(--muted)">Únicos, correlativos y reiniciados cada año.</span></div></section>`;
+  const side = null;
   const html = shell(path, { title: 'Mesa de Partes Virtual', desc: `Mesa de Partes Virtual del ${inst().nombre}: registro de documentos, cargo de recepción y seguimiento de expedientes.`, crumbs: [['Servicios', '#/servicios'], ['Mesa de Partes Virtual']], banner: { kicker: 'Servicios en línea', title: 'Mesa de Partes Virtual', text: 'Tus trámites en línea, con cargo de recepción inmediato' }, side, body });
   return { html, after: () => bindMpv(q0) };
 });
@@ -212,7 +216,7 @@ function bindMpv(q0) {
   const c = mpvCfg();
   const showTab = k => { $$('.pz-mt [data-tab]').forEach(x => x.setAttribute('aria-selected', x.dataset.tab === k)); $$('[data-pane]').forEach(p => p.hidden = p.dataset.pane !== k); };
   $$('.pz-mt [data-tab]').forEach(b => b.onclick = () => showTab(b.dataset.tab));
-  const f = $('[data-mpv]');
+  const f = $('[data-mpv]'); let busy=false,pending=null;
   const syncTipo = () => { const jur = f.tipoPersona.value !== 'Persona natural'; $$('[data-nat]', f).forEach(x => x.hidden = jur); $$('[data-jur]', f).forEach(x => x.hidden = !jur); if (jur && f.tipoDoc.value === 'DNI') f.tipoDoc.value = 'RUC'; if (!jur && f.tipoDoc.value === 'RUC') f.tipoDoc.value = 'DNI'; };
   f.tipoPersona.onchange = syncTipo;
   f.areaDestino.onchange = () => { const a = areaOf(f.areaDestino.value); $('[data-arhint]', f).innerHTML = a ? `Responsable: <b>${esc(a.resp)}</b> · <a href="mailto:${esc(a.correo)}">${esc(a.correo)}</a>` : 'La Mesa de Partes Virtual recibe el documento y lo deriva al área seleccionada.'; };
@@ -221,7 +225,7 @@ function bindMpv(q0) {
   f.archivos.onchange = listFiles;
   f.addEventListener('reset', () => setTimeout(() => { $('[data-files]', f).innerHTML = ''; $$('[data-c]', f).forEach(x => x.textContent = '0'); syncTipo(); }, 0));
   f.onsubmit = async e => {
-    e.preventDefault(); const v = Object.fromEntries(new FormData(f)); const er = {}; const jur = v.tipoPersona !== 'Persona natural';
+    e.preventDefault(); if(busy)return; const v = Object.fromEntries(new FormData(f)); const er = {}; const jur = v.tipoPersona !== 'Persona natural';
     const de = validDoc(v.tipoDoc, v.numDoc); if (!v.numDoc) er.numDoc = 'Ingrese el número de documento.'; else if (de) er.numDoc = de;
     if (jur) { if (String(v.razon).trim().length < 3) er.razon = 'Ingrese la razón social o el nombre de la entidad.'; }
     else { if (String(v.nombresP).trim().length < 2) er.nombresP = 'Ingrese sus nombres.'; if (String(v.apellidos).trim().length < 2) er.apellidos = 'Ingrese sus apellidos.'; }
@@ -240,31 +244,40 @@ function bindMpv(q0) {
     const cap = checkCaptcha(f, 'cap-mpv'); if (cap) er.captcha = cap;
     if (!showErrors(f, er)) return;
     if (rateLimited('mpv', 20)) return toast('Espere unos segundos antes de registrar otro documento.', 'err');
-    const btn = $('[data-send]', f); btn.disabled = true; btn.textContent = 'Registrando…';
+    const btn = $('[data-send]', f),progress=$('[data-mpv-progress]',f),step=$('[data-mpv-step]',f);
+    const signature=JSON.stringify([v,files.map(file=>[file.name,file.size,file.lastModified])]);
+    if(!pending||pending.signature!==signature)pending={signature,key:crypto.randomUUID(),record:null};
+    busy=true;const controls=[...f.elements,...$$('.pz-mt [data-tab]')].map(el=>[el,el.disabled]);
+    controls.forEach(([el])=>el.disabled=true);f.setAttribute('aria-busy','true');progress.hidden=false;progress.scrollIntoView({block:'nearest'});
+    btn.textContent='Registrando, espera un momento…';portalSubmissionStatus('Registrando trámite. Espera un momento y no cierres la página.');
+    const preventLeave=event=>{event.preventDefault();event.returnValue='';};window.addEventListener('beforeunload',preventLeave);
     try {
-      const archivos = []; for (const x of files) archivos.push(await storeFile(x, 'mpv'));
-      const fecha = nowISO(); const rec = recepcionDe(fecha); const y = String(new Date(fecha).getFullYear());
-      const C = DB.config.contadores; C.MPV[y] = (C.MPV[y] || 0) + 1; C.DOC[y] = (C.DOC[y] || 0) + 1;
-      let numero = `${c.prefijo}-${y}-${pad(C.MPV[y], 6)}`, numDocumento = `DOC-${y}-${pad(C.DOC[y], 6)}`;
-      const u = currentUser(); const nombres = jur ? v.razon.trim() : `${v.nombresP.trim()} ${v.apellidos.trim()}`;
-      const x = { id: uid(), numero, numDocumento, fecha, fechaRecepcion: rec.fecha.toISOString(), enHorario: rec.enHorario, usuarioRegistro: u ? `${u.usuario} (${u.nombre})` : `Ciudadano – portal web (${v.tipoDoc} ${v.numDoc.trim()})`, canal: 'Mesa de Partes Virtual',
-        tipoPersona: v.tipoPersona, nombres, nombresP: jur ? '' : v.nombresP.trim(), apellidos: jur ? '' : v.apellidos.trim(), tipoDoc: v.tipoDoc, numDoc: v.numDoc.trim(), correo: v.correo.trim(), telefono: v.telefono.trim(), direccion: (v.direccion || '').trim(),
-        tipoTramite: v.tipoTramite, docRef: (v.docRef || '').trim(), asunto: v.asunto.trim(), folios: +v.folios, observaciones: (v.observaciones || '').trim(), archivos, archivo: archivos[0], areaDestino: v.areaDestino, area: 'MP', estado: 'Recibido',
-        historial: [{ fecha, usuario: 'portal', estado: 'Recibido', nota: `Presentado por la Mesa de Partes Virtual. Recepción administrativa: ${fshort(rec.fecha, true)}${rec.enHorario ? '' : ' (fuera del horario de atención)'}. Área de destino: ${areaName(v.areaDestino)}.` }] };
-      expCargoCod(x); coll('expedientes').unshift(x);
-      if (!saveDB()) return;
-      numero = x.numero; numDocumento = x.numDocumento;
-      mailOut(x.correo, `Cargo de recepción ${numero}`, `Su documento ${numDocumento} (${x.tipoTramite}) fue registrado el ${fshort(fecha, true)}; recepción administrativa: ${fshort(rec.fecha, true)}. Código de verificación: ${x.cargoCod}.`);
-      mailOut(c.correo, `[${numero}] Nuevo documento: ${x.tipoTramite}`, `${x.nombres} · ${x.asunto} · Destino: ${areaName(x.areaDestino)}`);
-      audit('Registro', 'Mesa de partes', numero, `${x.tipoTramite} · destino ${x.areaDestino} · ${archivos.length} archivo(s)`); saveDB();
-      f.reset();
+      // Cede el control para dibujar el aviso antes de iniciar la carga.
+      await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+      let x=pending.record;
+      if(!x){
+        const archivos = []; for (const file of files){step.textContent=`Subiendo archivos: ${archivos.length+1} de ${files.length}.`;portalSubmissionStatus(step.textContent);archivos.push(await storeFile(file,'mpv'));}
+        const fecha = nowISO(); const rec = recepcionDe(fecha);
+        const numero='',numDocumento='';
+        const u = currentUser(); const nombres = jur ? v.razon.trim() : `${v.nombresP.trim()} ${v.apellidos.trim()}`;
+        x = { id: uid(), numero, numDocumento, fecha, fechaRecepcion: rec.fecha.toISOString(), enHorario: rec.enHorario, usuarioRegistro: u ? `${u.usuario} (${u.nombre})` : `Ciudadano – portal web (${v.tipoDoc} ${v.numDoc.trim()})`, canal: 'Mesa de Partes Virtual',
+          tipoPersona: v.tipoPersona, nombres, nombresP: jur ? '' : v.nombresP.trim(), apellidos: jur ? '' : v.apellidos.trim(), tipoDoc: v.tipoDoc, numDoc: v.numDoc.trim(), correo: v.correo.trim(), telefono: v.telefono.trim(), direccion: (v.direccion || '').trim(),
+          tipoTramite: v.tipoTramite, docRef: (v.docRef || '').trim(), asunto: v.asunto.trim(), folios: +v.folios, observaciones: (v.observaciones || '').trim(), archivos, archivo: archivos[0], areaDestino: v.areaDestino, area: 'MP', estado: 'Recibido',
+          historial: [{ fecha, usuario: 'portal', estado: 'Recibido', nota: `Presentado por la Mesa de Partes Virtual. Recepción administrativa: ${fshort(rec.fecha, true)}${rec.enHorario ? '' : ' (fuera del horario de atención)'}. Área de destino: ${areaName(v.areaDestino)}.` }] };
+        pending.record=x;
+      }
+      step.textContent='Guardando el trámite y preparando tu cargo. Este paso puede tardar unos segundos mientras se procesan las notificaciones.';
+      portalSubmissionStatus('Guardando el trámite y preparando tu cargo.');await portalSubmitExpediente(x,pending.key);portalSubmissionStatus('Trámite registrado. Ya puedes descargar tu cargo.');
+      const numero=x.numero,numDocumento=x.numDocumento;
+      pending=null;
+      f.reset(); renewCaptcha(f);
       const m = modal({ title: 'Documento registrado', size: 'lg', body: `<div class="notice ok">Tu documento fue <b>recibido por la Mesa de Partes Virtual</b>.</div>
         <div class="pz-codes"><div><span>N.º de expediente</span><b class="mono">${esc(numero)}</b></div><div><span>N.º de documento</span><b class="mono">${esc(numDocumento)}</b></div><div><span>Código de verificación</span><b class="mono">${esc(x.cargoCod || '—')}</b></div></div>
-        <dl class="kv"><dt>Fecha y hora de presentación</dt><dd>${fdate(fecha, true)}</dd><dt>Fecha y hora de recepción</dt><dd>${fdate(rec.fecha, true)}${rec.enHorario ? '' : ' <span class="badge warn">Fuera de horario: siguiente día hábil</span>'}</dd><dt>Área de destino</dt><dd>${esc(areaName(x.areaDestino))}</dd><dt>Plazo referencial</dt><dd>${mpvPlazo(x.tipoTramite)} días hábiles</dd></dl>
+        <dl class="kv"><dt>Fecha y hora de presentación</dt><dd>${fdate(x.fecha, true)}</dd><dt>Fecha y hora de recepción</dt><dd>${fdate(x.fechaRecepcion, true)}${x.enHorario ? '' : ' <span class="badge warn">Fuera de horario: siguiente día hábil</span>'}</dd><dt>Área de destino</dt><dd>${esc(areaName(x.areaDestino))}</dd><dt>Plazo referencial</dt><dd>${c.plazos[x.tipoTramite] || 10} días hábiles</dd></dl>
         <p>Descarga y conserva tu cargo. Correo de contacto: <b>${esc(x.correo)}</b>.</p>`, foot: `<a class="btn ghost" href="${esc('#/servicios/mesa-de-partes?exp=' + numero + '&c=' + (x.cargoCod || ''))}" data-seg>Ver seguimiento</a>${cargoBtn(x)}` });
       $('[data-seg]', m.el).onclick = () => m.close();
-    } catch (err) { console.error(err); toast(err && err.message ? `No se pudo registrar el documento: ${err.message}` : 'No se pudo registrar el documento. Intente nuevamente.', 'err'); }
-    finally { btn.disabled = false; btn.innerHTML = `${S16('send')} Registrar y obtener cargo`; }
+    } catch (err) {const message=err.message||'No se pudo confirmar el registro. Conserva los datos y vuelve a intentar el mismo envío.';toast(message,'err');portalSubmissionStatus(message);}
+    finally {busy=false;controls.forEach(([el,disabled])=>el.disabled=disabled);f.removeAttribute('aria-busy');progress.hidden=true;window.removeEventListener('beforeunload',preventLeave);btn.innerHTML=`${S16('send')} Registrar y obtener cargo`;}
   };
   const q = $('[data-mpvq]');
   const findExp = (n, d) => portalLookup('expedientes', String(n || '').trim().toUpperCase(), String(d || '').trim());
@@ -324,7 +337,7 @@ cargoExp = async function (id) {
   doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(50);
   [`La recepción no implica la conformidad con el contenido del documento. El trámite será atendido por el área de destino dentro del plazo de ${mpvPlazo(x.tipoTramite)} días hábiles, contados desde la fecha de recepción.`,
    `Consulte el estado escaneando el código QR o en Mesa de Partes Virtual › Consultar expediente, con el N.° ${x.numero} y su documento de identidad o el código ${x.cargoCod}.`,
-   'El envío de notificaciones por correo está pendiente de habilitación; consulte el seguimiento del expediente.'].forEach(s => { const t = doc.splitTextToSize('• ' + s, tw); doc.text(t, tx, ty); ty += 3.6 * t.length + .6; });
+   'La confirmación por correo depende de la disponibilidad del servicio; conserve este cargo y consulte el seguimiento del expediente.'].forEach(s => { const t = doc.splitTextToSize('• ' + s, tw); doc.text(t, tx, ty); ty += 3.6 * t.length + .6; });
   pdfPie(doc);
   downloadBlob(doc.output('blob'), 'cargo_' + x.numero + '.pdf'); audit('Descarga de cargo', 'Mesa de partes', x.numero); saveDB();
   toast('Cargo de recepción descargado.', 'ok');
@@ -358,8 +371,8 @@ expDetalle = function (id) {
       <h3 style="margin-top:14px">Asunto</h3><div class="card cb" style="white-space:pre-wrap">${esc(x.asunto)}</div>${x.observaciones ? `<p><b>Observaciones:</b> ${esc(x.observaciones)}</p>` : ''}
       <h3 style="margin-top:14px">Archivos adjuntos (${archivos.length})</h3>${archivos.length ? `<ul class="pz-files">${archivos.map((a, i) => `<li>${S16('file')} <span>${esc(a.original || a.nombre)}</span> <small>${fsize(a.size)}</small><button class="btn xs sec" data-dl="${i}">${sic('download', 13)} Descargar</button>${a.sha256 ? `<code title="SHA-256">${esc(a.sha256.slice(0, 16))}…</code>` : ''}</li>`).join('')}</ul>` : '<p>Sin archivos.</p>'}</div></div>
       <div class="panel"><h2>Historial y seguimiento</h2><div class="pb">${histHTML(x.historial)}</div></div></div>
-    <div style="display:grid;gap:16px;align-content:start"><div class="panel"><h2>Derivar a un área</h2><div class="pb" style="display:grid;gap:10px"><div class="field"><label for="xa">Área receptora</label><select id="xa">${areaOptions(x.area === 'MP' ? (x.areaDestino || '') : x.area, { placeholder: 'Seleccione el área' })}</select></div><div class="field"><label for="xan">Proveído / indicación</label><input id="xan" class="inp" placeholder="Ej.: Para su atención y trámite correspondiente"></div><label class="check"><input type="checkbox" id="xam" disabled> Correo pendiente de configuración</label><button class="btn" data-xa>${sic('send')} Derivar expediente</button></div></div>
-      <div class="panel"><h2>Actualizar estado</h2><div class="pb" style="display:grid;gap:10px"><div class="field"><label for="xs">Nuevo estado</label><select id="xs">${EXP_STATES.map(s => `<option ${s === x.estado ? 'selected' : ''}>${s}</option>`).join('')}</select></div><div class="field"><label for="xn">Nota / respuesta</label><textarea id="xn" class="inp" rows="3"></textarea></div><label class="check"><input type="checkbox" id="xm" disabled> Correo pendiente de configuración</label><button class="btn sec" data-xs>Guardar estado</button></div></div>
+    <div style="display:grid;gap:16px;align-content:start"><div class="panel"><h2>Derivar a un área</h2><div class="pb" style="display:grid;gap:10px"><div class="field"><label for="xa">Área receptora</label><select id="xa">${areaOptions(x.area === 'MP' ? (x.areaDestino || '') : x.area, { placeholder: 'Seleccione el área' })}</select></div><div class="field"><label for="xan">Proveído / indicación</label><input id="xan" class="inp" placeholder="Ej.: Para su atención y trámite correspondiente"></div><label class="check"><input type="checkbox" id="xam" checked> Enviar aviso por correo al solicitante y al área receptora</label><button class="btn" data-xa>${sic('send')} Derivar expediente</button></div></div>
+      <div class="panel"><h2>Actualizar estado</h2><div class="pb" style="display:grid;gap:10px"><div class="field"><label for="xs">Nuevo estado</label><select id="xs">${EXP_STATES.map(s => `<option ${s === x.estado ? 'selected' : ''}>${s}</option>`).join('')}</select></div><div class="field"><label for="xn">Nota / respuesta</label><textarea id="xn" class="inp" rows="3"></textarea></div><label class="check"><input type="checkbox" id="xm" checked> Enviar aviso por correo al solicitante</label><button class="btn sec" data-xs>Guardar estado</button></div></div>
       <div class="panel"><h2>Plazo</h2><div class="pb meta-list"><span>Tipo: ${esc(x.tipoTramite)} · ${mpvPlazo(x.tipoTramite)} días hábiles</span><span>Vence: <b>${fdate(expPlazo(x).due)}</b></span><span>${expSem(x)}</span></div></div></div></div>`;
   return {
     html, after: () => {
@@ -369,14 +382,14 @@ expDetalle = function (id) {
       $('[data-xa]').onclick = () => {
         const v = $('#xa').value; if (!v) return toast('Seleccione el área.', 'err'); if (v === x.area) return toast('El expediente ya se encuentra en esa área.', 'err');
         const a = areaOf(v); const prov = $('#xan').value.trim(); const n = `Derivado a ${areaName(v)}${prov ? ': ' + prov : ''}`;
-        x.area = v; if (['Recibido', 'Observado'].includes(x.estado)) x.estado = 'Derivado';
+        x.area = v; if (['Recibido', 'Observado'].includes(x.estado)) x.estado = 'Derivado'; if ($('#xam').checked) delete x.sinAviso; else x.sinAviso = true;
         x.historial.push({ fecha: nowISO(), usuario: me, estado: x.estado, nota: n });
         if ($('#xam').checked) { if (a) mailOut(a.correo, `[${x.numero}] Expediente derivado: ${x.tipoTramite}`, `${x.nombres} · ${x.asunto}${prov ? ' · Proveído: ' + prov : ''}`); mailOut(x.correo, `Expediente ${x.numero}: derivado`, `Su documento fue derivado a ${areaName(v)}.`); }
-        audit('Derivación', 'Mesa de partes', x.numero, n); stamp(x); if (saveDB()) { toast('Expediente derivado. El envío por correo está pendiente de configuración.', 'ok'); route(); }
+        audit('Derivación', 'Mesa de partes', x.numero, n); stamp(x); if (saveDB()) { toast($('#xam').checked ? 'Expediente derivado. Avisos registrados para el solicitante y el área receptora.' : 'Expediente derivado sin aviso por correo.', 'ok'); route(); }
       };
       $('[data-xs]').onclick = () => {
         const v = $('#xs').value, n = $('#xn').value.trim(); if (v === x.estado && !n) return toast('Seleccione otro estado o escriba una nota.', 'err'); if (['Observado', 'Atendido'].includes(v) && !n) return toast(v === 'Observado' ? 'Indique la observación.' : 'Registre la respuesta o el detalle de la atención.', 'err');
-        x.historial.push({ fecha: nowISO(), usuario: me, estado: v, nota: n }); audit(`Cambio de estado: ${x.estado} → ${v}`, 'Mesa de partes', x.numero, n); x.estado = v; stamp(x);
+        x.historial.push({ fecha: nowISO(), usuario: me, estado: v, nota: n }); audit(`Cambio de estado: ${x.estado} → ${v}`, 'Mesa de partes', x.numero, n); x.estado = v; if (!$('#xm') || $('#xm').checked) delete x.sinAviso; else x.sinAviso = true; stamp(x);
         if ($('#xm').checked) mailOut(x.correo, `Expediente ${x.numero}: ${v}`, n || 'Su expediente cambió de estado.'); if (saveDB()) { toast('Estado actualizado.', 'ok'); route(); }
       };
       // Dirección consulta sin modificar; el personal de un área atiende sus expedientes pero no los deriva a otra.
@@ -398,28 +411,34 @@ function mpvAreasAdm() {
   return { html };
 }
 function mpvConfigAdm() {
-  const c = mpvCfg(); const canEdit = currentUser().rol === 'admin' || can('config');
+  const c = mpvCfg(); const canEdit = currentUser().rol === 'admin' || can('config'); const year=String(portalBootstrap.numberingYear||yearNow()); const next=(DB.config.contadores.MPV[year]||0)+1;
   const html = admHead('Mesa de partes virtual', 'Horario de atención, tipos de documento admitidos, formatos y tamaño de archivos, feriados y plazos de atención.', '', 'inbox', [['Mesa de partes', '#/admin/expedientes'], ['Configuración']]) + mpTabs('c')
     + `<form class="panel" data-mpvcfg><div class="pb"><div class="form-grid">
+      <div class="field full"><h3>Código y correlativo del expediente</h3><p class="note">Formato: CÓDIGO-AÑO-CORRELATIVO. Se aplica a nuevos expedientes; los anteriores conservan su número. La secuencia es anual.</p></div>
+      <div class="field"><label for="mc-prefix">Código / prefijo del expediente</label><input id="mc-prefix" name="prefijo" required maxlength="40" pattern="[A-Z0-9][A-Z0-9-]{0,39}" value="${esc(c.prefijo)}"></div>
+      <div class="field"><label for="mc-digits">Dígitos del correlativo</label><input id="mc-digits" name="digitos" type="number" required min="1" max="9" value="${c.digitos||6}"><small>Se completa con ceros a la izquierda, sin truncar el número.</small></div>
+      <div class="field"><label for="mc-next">Siguiente correlativo (${year})</label><input id="mc-next" name="siguiente" type="number" required min="${next}" max="999999999" value="${next}"><small>Puedes avanzar la secuencia, pero no retroceder a números ya utilizados.</small></div>
+      <div class="field full"><span>Vista previa: <b class="mono" data-number-preview></b></span></div>
       <div class="field"><label for="mc-d">Días de atención</label><input id="mc-d" name="dias" value="${esc(c.dias)}"></div>
       <div class="field"><label for="mc-i">Hora de inicio</label><input id="mc-i" name="horaIni" type="time" value="${esc(c.horaIni)}"></div>
       <div class="field"><label for="mc-f">Hora de cierre</label><input id="mc-f" name="horaFin" type="time" value="${esc(c.horaFin)}"></div>
       <div class="field"><label for="mc-m">Tamaño máximo por archivo (MB)</label><input id="mc-m" name="maxMB" type="number" min="1" max="100" value="${c.maxMB}"></div>
       <div class="field"><label for="mc-n">Máximo de archivos por trámite</label><input id="mc-n" name="maxArchivos" type="number" min="1" max="10" value="${c.maxArchivos}"></div>
-      <div class="field"><label for="mc-c">Correo de Mesa de Partes</label><input id="mc-c" name="correo" type="email" value="${esc(c.correo)}"></div>
+      <div class="field"><label for="mc-c">Correo de Mesa de Partes</label><input id="mc-c" name="correo" type="email" required maxlength="254" value="${esc(c.correo)}"></div>
       <div class="field full"><span class="lbl">Formatos permitidos</span><div style="display:flex;gap:14px;flex-wrap:wrap">${MPV_FORMATOS.map(([k, l]) => `<label class="check"><input type="checkbox" name="fmt" value="${k}" ${c.formatos.includes(k) ? 'checked' : ''}> ${l}</label>`).join('')}</div></div>
       <div class="field"><label for="mc-t">Tipos de documento (uno por línea)</label><textarea id="mc-t" name="tipos" rows="13">${esc(c.tipos.join('\n'))}</textarea></div>
       <div class="field"><label for="mc-p">Plazo de atención por tipo (días hábiles, “Tipo = días”)</label><textarea id="mc-p" name="plazos" rows="13">${esc(c.tipos.map(t => `${t} = ${c.plazos[t] || 10}`).join('\n'))}</textarea></div>
-      <div class="field full"><label for="mc-h">Feriados y días no laborables (AAAA-MM-DD, uno por línea)</label><textarea id="mc-h" name="feriados" rows="5">${esc(c.feriados.join('\n'))}</textarea><div class="hint">Los documentos presentados en estas fechas se consideran recibidos el siguiente día hábil.</div></div>
-      <div class="full" style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><span class="note">Numeración: <b class="mono">${esc(c.prefijo)}-${yearNow()}-${pad((DB.config.contadores.MPV[String(yearNow())] || 0) + 1, 6)}</b> (siguiente) · <b class="mono">DOC-${yearNow()}-${pad((DB.config.contadores.DOC[String(yearNow())] || 0) + 1, 6)}</b></span>${canEdit ? '<button class="btn">Guardar configuración</button>' : '<span class="note">Solo el administrador puede modificar esta configuración.</span>'}</div>
+      <div class="field full"><label for="mc-h">Feriados regionales y días no laborables de la institución (AAAA-MM-DD, uno por línea). Los feriados nacionales se aplican solos cada año.</label><textarea id="mc-h" name="feriados" rows="5">${esc(c.feriados.join('\n'))}</textarea><div class="hint">Los documentos presentados en estas fechas se consideran recibidos el siguiente día hábil.</div></div>
+      <div class="full" style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><span class="note">Numeración: <b class="mono">${esc(c.prefijo)}-${year}-${pad(next, c.digitos||6)}</b> (siguiente) · <b class="mono">DOC-${yearNow()}-${pad((DB.config.contadores.DOC[String(yearNow())] || 0) + 1, 6)}</b></span>${canEdit ? '<button class="btn">Guardar configuración</button>' : '<span class="note">Solo el administrador puede modificar esta configuración.</span>'}</div>
     </div></div></form>`;
-  return { html, after: () => { const f = $('[data-mpvcfg]'); f.onsubmit = e => { e.preventDefault(); if (!canEdit) return;
+  return { html, after: () => { const f = $('[data-mpvcfg]'); const preview=()=>{f.querySelector('[data-number-preview]').textContent=f.prefijo.value+'-'+year+'-'+String(f.siguiente.value).padStart(Math.max(1,Math.min(9,+f.digitos.value||6)),'0');};for(const name of ['prefijo','digitos','siguiente'])f.elements[name].addEventListener('input',preview);preview(); f.onsubmit = e => { e.preventDefault(); if (!canEdit) return;
     const tipos = f.tipos.value.split('\n').map(s => s.trim()).filter(Boolean); if (!tipos.length) return toast('Registre al menos un tipo de documento.', 'err');
     const fmts = $$('[name="fmt"]:checked', f).map(i => i.value); if (!fmts.length) return toast('Seleccione al menos un formato.', 'err');
     if (hm(f.horaFin.value) <= hm(f.horaIni.value)) return toast('La hora de cierre debe ser posterior a la de inicio.', 'err');
     const fer = f.feriados.value.split('\n').map(s => s.trim()).filter(Boolean); const bad = fer.find(s => !/^\d{4}-\d{2}-\d{2}$/.test(s)); if (bad) return toast('Fecha de feriado no válida: ' + bad, 'err');
     const plazos = {}; f.plazos.value.split('\n').forEach(l => { const m = l.split('='); if (m.length === 2 && +m[1] > 0) plazos[m[0].trim()] = Math.round(+m[1]); }); tipos.forEach(t => { if (!plazos[t]) plazos[t] = 10; });
-    Object.assign(c, { dias: f.dias.value.trim() || 'Lunes a viernes', horaIni: f.horaIni.value, horaFin: f.horaFin.value, maxMB: Math.max(1, +f.maxMB.value || 40), maxArchivos: Math.max(1, +f.maxArchivos.value || 5), correo: f.correo.value.trim(), formatos: fmts, tipos, plazos, feriados: fer });
+    DB.config.contadores.MPV[year]=Number(f.siguiente.value)-1;
+    Object.assign(c, { prefijo:f.prefijo.value.trim(),digitos:Number(f.digitos.value),dias: f.dias.value.trim() || 'Lunes a viernes', horaIni: f.horaIni.value, horaFin: f.horaFin.value, maxMB: Math.max(1, +f.maxMB.value || 40), maxArchivos: Math.max(1, +f.maxArchivos.value || 5), correo: f.correo.value.trim(), formatos: fmts, tipos, plazos, feriados: fer });
     Object.assign(EXP_PLAZOS, plazos); audit('Configuración', 'Mesa de partes', 'Horario, tipos, formatos y plazos'); if (saveDB()) { toast('Configuración de la Mesa de Partes guardada.', 'ok'); route(); } }; } };
 }
 
@@ -433,7 +452,7 @@ function lrForm() {
   return `<form class="pz-lr card" data-lr2 novalidate>
    <div class="pz-lr-h">${ic('book')}<div><h2>Registro de reclamo o queja</h2><small>Los campos marcados con * son obligatorios.</small></div></div>
    <div class="cb" style="padding:20px">
-    <h3 class="pz-sub">${S16('user')} Datos del usuario</h3><div class="form-grid">
+    <h3 class="pz-sub">${S16('user')} Datos del usuario</h3><div class="form-grid g4">
      <div class="field"><label for="l2-td">Tipo de documento <span class="req">*</span></label><select id="l2-td" name="tipoDoc"><option value="">Seleccione</option><option>DNI</option><option value="CE">Carné de extranjería</option><option>Pasaporte</option><option>RUC</option></select></div>
      <div class="field"><label for="l2-nd">Número de documento <span class="req">*</span></label><input id="l2-nd" name="numDoc" maxlength="12" placeholder="Ingrese su documento" autocomplete="off"></div>
      <div class="field"><label for="l2-no">Nombres <span class="req">*</span></label><input id="l2-no" name="nombresP" maxlength="80" placeholder="Ingrese sus nombres" autocomplete="given-name"></div>
@@ -457,13 +476,13 @@ function lrForm() {
     <div class="field pz-decl"><label class="check"><input type="checkbox" name="declaro"> <span>Declaro que la información proporcionada es verdadera y corresponde a los hechos que deseo comunicar. <span class="req">*</span></span></label></div>
     <div class="field"><label class="check"><input type="checkbox" name="acepto"> <span>Acepto la <a href="#/politica-de-privacidad" target="_blank">Política de Privacidad</a> y el tratamiento de mis datos personales (Ley N.º 29733). <span class="req">*</span></span></label></div>
     ${captchaHTML('cap-lr2')}
+    <div class="mpv-progress" data-lr-progress role="status" aria-live="polite" hidden><span class="mpv-spinner" aria-hidden="true"></span><div><strong>Registrando reclamo, espera un momento…</strong><p>Estamos guardando tu solicitud y preparando tu constancia. No cierres la página ni repitas el envío.</p></div></div>
     <div class="pz-actions"><button type="reset" class="btn ghost">${S16('back')} Cancelar</button><button class="btn" data-send>${S16('send')} Enviar reclamo</button></div>
    </div></form>`;
 }
 function lrPage(path, q0) {
   const c = lrCfg(); const i = inst(); const t0 = q0 && q0.get && q0.get('tab'); const cur = t0 === 'consulta' || (q0 && q0.get && q0.get('rcl')) ? 'c' : t0 === 'info' ? 'i' : 'r';
-  const body = `${svNav('libro-de-reclamaciones')}${svHead('lr', [['clock', `Reclamos: ${c.plazoReclamo} días hábiles`], ['clock', `Quejas: ${c.plazoQueja} días hábiles`], ['file', 'Constancia en PDF']])}
-   ${svSteps([['Registra', 'Elige reclamo o queja y describe lo sucedido.'], ['Recibe tus códigos', 'Seguimiento RCL, verificación y constancia PDF con QR.'], ['Atención', 'El responsable lo deriva al área competente.'], ['Respuesta', 'Consulta la respuesta en el portal dentro del plazo.']])}
+  const body = `${svNav('libro-de-reclamaciones')}<div class="pz-mpv-top">${svHead('lr', null, true)}${svKeyBox('clock', 'Plazos de respuesta', `Reclamos: ${c.plazoReclamo} días · Quejas: ${c.plazoQueja} días`, 'Días hábiles · constancia en PDF con código QR')}</div>
    ${svTabs([['r', 'edit', 'Registrar reclamo o queja'], ['c', 'search', 'Consultar estado'], ['i', 'book', 'Información']], cur)}
    <div data-pane="r" ${cur === 'r' ? '' : 'hidden'}>${lrForm()}</div>
    <div data-pane="c" ${cur === 'c' ? '' : 'hidden'}><section class="card cb pz-qf"><div class="pz-qf-h">${sic('search', 20)}<div><h2>Consultar el estado de mi reclamo o queja</h2><small>Ingresa el seguimiento RCL y el documento completo del reclamante, o el código de verificación de tu constancia.</small></div></div><form data-lrq2 class="form-grid" novalidate><div class="field"><label for="lq2-c">Código de seguimiento</label><input id="lq2-c" name="codigo" placeholder="RCL-${yearNow()}-00001" autocomplete="off"></div><div class="field"><label for="lq2-d">Documento del reclamante o código de verificación</label><input id="lq2-d" name="doc" maxlength="20" placeholder="DNI de 8 dígitos o verificación de 16 caracteres" autocomplete="off"></div><div class="full"><button class="btn">${S16('search')} Consultar</button></div></form><div id="lq2-r" aria-live="polite"></div></section></div>
@@ -471,11 +490,9 @@ function lrPage(path, q0) {
      <div class="pz-lr-2"><div class="rec">${sic('file', 22)}<b>Reclamo</b><p>Disconformidad relacionada con el servicio educativo o con los trámites brindados por el instituto.</p><small>Plazo de respuesta: ${c.plazoReclamo} días hábiles</small></div><div class="que">${sic('alert', 22)}<b>Queja</b><p>Malestar o descontento respecto a la atención recibida: trato, demora, falta de información, etc.</p><small>Plazo de respuesta: ${c.plazoQueja} días hábiles</small></div></div>
      <h3>Flujo de atención</h3><ol class="pz-flow"><li><b>Recibido</b><span>Registro y constancia PDF descargable.</span></li><li><b>Derivado</b><span>El responsable lo deriva al área competente.</span></li><li><b>En atención</b><span>El área evalúa y propone la respuesta.</span></li><li><b>Atendido</b><span>La respuesta queda disponible en el seguimiento del portal.</span></li></ol>
      <h3>Responsable de la atención</h3><p><b>${esc(c.responsable || 'Responsable pendiente de asignación')}</b> · ${esc(c.cargo)}<br><a href="mailto:${esc(c.correo)}">${esc(c.correo)}</a></p>
-     <h3>A tener en cuenta</h3><ul><li>El plazo se cuenta desde el día hábil siguiente al registro.</li><li>La formulación del reclamo no impide acudir a otras vías de solución de controversias.</li><li>Base normativa: Decreto Supremo N.º 042-2011-PCM, que obliga a las entidades públicas a contar con un Libro de Reclamaciones.</li></ul></section></div>
-   <div class="pz-info3"><div>${ic('shield')}<b>Registro seguro</b><span>Tu información se registra de manera segura y protegida (Ley N.º 29733).</span></div><div>${ic('search')}<b>Seguimiento</b><span>Con tu código consultas el estado en cualquier momento.</span></div><div>${ic('mail')}<b>Notificación</b><span>Consulta el estado y la respuesta con tu código de seguimiento.</span></div></div>`;
-  const side = `<section class="side-box"><h2>Responsable de la atención</h2><div class="pad" style="font-size:13.5px"><b>${esc(c.responsable || 'Responsable pendiente de asignación')}</b><br>${esc(c.cargo)}<br>✉️ <a href="mailto:${esc(c.correo)}">${esc(c.correo)}</a></div></section>
-   <section class="side-box"><h2>Plazos de respuesta</h2><div class="pad" style="font-size:13.5px"><ul style="padding-left:18px;margin:0"><li>Reclamos: hasta <b>${c.plazoReclamo} días hábiles</b>.</li><li>Quejas: hasta <b>${c.plazoQueja} días hábiles</b>.</li></ul></div></section>
-   <section class="side-box"><h2>¿Necesitas ayuda?</h2><div class="pad" style="font-size:13.5px">📞 ${esc(i.telefono)}<br>✉️ ${esc(c.correo)}<br>🕗 ${esc(i.horario)}</div></section>`;
+     <h3>¿Necesitas ayuda?</h3><p>📞 ${esc(i.telefono)} · 🕗 ${esc(i.horario)}</p>
+     <h3>A tener en cuenta</h3><ul><li>El plazo se cuenta desde el día hábil siguiente al registro.</li><li>La formulación del reclamo no impide acudir a otras vías de solución de controversias.</li><li>Base normativa: Decreto Supremo N.º 042-2011-PCM, que obliga a las entidades públicas a contar con un Libro de Reclamaciones.</li></ul><div class="pz-info3"><div>${ic('shield')}<b>Registro seguro</b><span>Tu información se registra de manera segura y protegida (Ley N.º 29733).</span></div><div>${ic('search')}<b>Seguimiento</b><span>Con tu código consultas el estado en cualquier momento.</span></div><div>${ic('mail')}<b>Notificación</b><span>Consulta el estado y la respuesta con tu código de seguimiento.</span></div></div></section></div>`;
+  const side = null;
   const html = shell(path, { title: 'Libro de Reclamaciones', desc: `Libro de Reclamaciones Virtual del ${inst().nombre}: registra tu reclamo o queja y consulta su estado.`, crumbs: [['Servicios', '#/servicios'], ['Libro de Reclamaciones']], banner: { kicker: 'Servicios en línea', title: 'Libro de Reclamaciones', text: 'Porque un mejor servicio también se construye escuchándote' }, side, body });
   return { html, after: () => bindLr2(q0) };
 }
@@ -483,13 +500,13 @@ R('servicios/libro-de-reclamaciones', (path, q0) => lrPage(path, q0));
 R('transparencia/libro-de-reclamaciones', (path, q0) => lrPage('servicios/libro-de-reclamaciones', q0));
 R('libro-de-reclamaciones', (path, q0) => lrPage('servicios/libro-de-reclamaciones', q0 || new URLSearchParams()));
 function bindLr2(q0) {
-  const c = lrCfg(); const f = $('[data-lr2]'); const L = DB.config.limites; const lim = Math.max(2000, L.descripcion || 0);
+  const c = lrCfg(); const f = $('[data-lr2]');let busy=false,pending=null; const L = DB.config.limites; const lim = Math.max(2000, L.descripcion || 0);
   const showTab = k => { $$('.pz-mt [data-tab]').forEach(x => x.setAttribute('aria-selected', x.dataset.tab === k)); $$('[data-pane]').forEach(p => p.hidden = p.dataset.pane !== k); };
   $$('.pz-mt [data-tab]').forEach(b => b.onclick = () => showTab(b.dataset.tab));
   $$('[data-count]', f).forEach(t => t.addEventListener('input', () => { t.parentNode.querySelector('[data-c]').textContent = t.value.length; }));
   f.addEventListener('reset', () => setTimeout(() => $$('[data-c]', f).forEach(x => x.textContent = '0'), 0));
   f.onsubmit = async e => {
-    e.preventDefault(); const v = Object.fromEntries(new FormData(f)); const er = {};
+    e.preventDefault();if(busy)return; const v = Object.fromEntries(new FormData(f)); const er = {};
     if (!v.tipoDoc) er.tipoDoc = 'Seleccione el tipo de documento.';
     else { const de = validDoc(v.tipoDoc, v.numDoc); if (!v.numDoc) er.numDoc = 'Ingrese el número de documento.'; else if (de) er.numDoc = de; }
     if (String(v.nombresP).trim().length < 2) er.nombresP = 'Ingrese sus nombres.';
@@ -502,32 +519,27 @@ function bindLr2(q0) {
     if (!v.fechaHecho) er.fechaHecho = 'Indique la fecha del hecho.'; else if (v.fechaHecho > ymd(new Date())) er.fechaHecho = 'La fecha no puede ser futura.';
     if (String(v.descripcion).trim().length < 20) er.descripcion = 'Describa los hechos (mínimo 20 caracteres).'; else if (v.descripcion.length > lim) er.descripcion = `Máximo ${lim} caracteres.`;
     if (String(v.pedido).trim().length < 5) er.pedido = 'Indique su pedido concreto.';
-    const file = f.adjunto.files[0]; if (file) { const fe = checkUpload(file, ['pdf', 'jpg', 'jpeg', 'png'], 5); if (fe) er.adjunto = fe; }
+    const file = f.adjunto.files[0]; if (file) { const fe = checkUpload(file, ['pdf', 'jpg', 'jpeg', 'png'], 10); if (fe) er.adjunto = fe; }
     if (!f.declaro.checked) er.declaro = 'Debe declarar que la información es verdadera.';
     if (!f.acepto.checked) er.acepto = 'Debe aceptar la política de privacidad.';
     const cap = checkCaptcha(f, 'cap-lr2'); if (cap) er.captcha = cap;
     if (!showErrors(f, er)) return;
     if (rateLimited('lr2', 20)) return toast('Espere unos segundos antes de registrar otro reclamo.', 'err');
-    const btn = $('[data-send]', f); btn.disabled = true;
+    const btn=$('[data-send]',f),progress=$('[data-lr-progress]',f);const signature=JSON.stringify([v,file?[file.name,file.size,file.lastModified]:null]);if(!pending||pending.signature!==signature)pending={signature,key:crypto.randomUUID(),record:null};busy=true;const controls=[...f.elements,...$$('.pz-mt [data-tab]')].map(el=>[el,el.disabled]);controls.forEach(([el])=>el.disabled=true);progress.hidden=false;progress.scrollIntoView({block:'nearest'});btn.textContent='Registrando, espera un momento…';f.setAttribute('aria-busy','true');portalSubmissionStatus('Registrando reclamo. Espera un momento y no cierres la página.');const preventLeave=event=>{event.preventDefault();event.returnValue='';};window.addEventListener('beforeunload',preventLeave);
     try {
+      await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));let r=pending.record;if(!r){
       const adj = file ? await storeFile(file, 'rcl') : null;
-      const fecha = nowISO(); const y = String(new Date(fecha).getFullYear()); const C = DB.config.contadores.RCL; C[y] = (C[y] || 0) + 1;
-      let codigo = `RCL-${y}-${pad(C[y], 5)}`; const plazoDias = v.tipo === 'Queja' ? c.plazoQueja : c.plazoReclamo; const nombres = `${v.nombresP.trim()} ${v.apellidos.trim()}`;
-      const r = { id: uid(), codigo, fecha, tipo: v.tipo, nombres, nombresP: v.nombresP.trim(), apellidos: v.apellidos.trim(), tipoDoc: v.tipoDoc, numDoc: v.numDoc.trim(), correo: v.correo.trim(), telefono: (v.telefono || '').trim(), condicion: v.condicion, programaId: v.programaId === 'ninguno' ? '' : v.programaId, fechaHecho: v.fechaHecho, areaHecho: v.areaHecho || '',
+      const fecha = nowISO();
+      let codigo = ''; const plazoDias = v.tipo === 'Queja' ? c.plazoQueja : c.plazoReclamo; const nombres = `${v.nombresP.trim()} ${v.apellidos.trim()}`;
+      r = { id: uid(), codigo, fecha, tipo: v.tipo, nombres, nombresP: v.nombresP.trim(), apellidos: v.apellidos.trim(), tipoDoc: v.tipoDoc, numDoc: v.numDoc.trim(), correo: v.correo.trim(), telefono: (v.telefono || '').trim(), condicion: v.condicion, programaId: v.programaId === 'ninguno' ? '' : v.programaId, fechaHecho: v.fechaHecho, areaHecho: v.areaHecho || '',
         asunto: clamp(v.descripcion.trim().replace(/\s+/g, ' '), 80), descripcion: v.descripcion.trim(), pedido: v.pedido.trim(), adjunto: adj, estado: 'Recibido', plazoDias, vence: diasHabiles(fecha, plazoDias).due.toISOString(), responsable: { nombre: c.responsable, cargo: c.cargo, correo: c.correo }, area: '',
         historial: [{ fecha, usuario: 'portal', estado: 'Recibido', nota: `Registro desde el Libro de Reclamaciones Virtual. Responsable: ${c.responsable} (${c.cargo}).` }], notas: [], respuesta: '', notifInst: 'Pendiente', notifUser: 'Pendiente', anulado: false };
-      coll('reclamos').unshift(r);
-      if (!saveDB()) return;
-      codigo = r.codigo;
-      r.notifInst = mailOut(c.correo, `[${codigo}] Nuevo ${v.tipo.toLowerCase()} registrado`, `${r.nombres} (${r.condicion}) - ${r.descripcion}`);
-      if (DB.config.correoReclamos && DB.config.correoReclamos !== c.correo) mailOut(DB.config.correoReclamos, `[${codigo}] Copia: nuevo ${v.tipo.toLowerCase()}`, r.asunto);
-      r.notifUser = mailOut(r.correo, `Constancia de registro ${codigo}`, `Su ${v.tipo.toLowerCase()} fue registrado el ${fshort(fecha, true)} con el código ${codigo}. Plazo máximo de respuesta: ${plazoDias} días hábiles (hasta el ${fshort(r.vence)}).`);
-      audit('Registro', 'Libro de reclamaciones', codigo, `${v.tipo} registrado desde el portal. Notificación institucional: ${r.notifInst}`); saveDB();
-      f.reset();
-      const m = modal({ title: `${v.tipo} registrado`, body: `<div class="notice ok">Tu ${esc(v.tipo.toLowerCase())} fue registrado correctamente el ${fdate(fecha, true)}.</div><p>Tu código de seguimiento es:</p><div class="code-box">${codigo}</div><p>Código de verificación: <b class="mono">${esc(r.cargoCod || 'Pendiente de actualización')}</b></p><dl class="kv" style="margin-top:12px"><dt>Responsable</dt><dd>${esc(c.responsable)} · ${esc(c.cargo)}</dd><dt>Plazo de respuesta</dt><dd>${plazoDias} días hábiles (hasta el ${fdate(r.vence)})</dd></dl><p>Puedes descargar tu constancia. Correo de contacto: <b>${esc(r.correo)}</b>. Guarda tu código para consultar el estado.</p>`, foot: `<button class="btn sec" data-print>${S16('print')} Descargar constancia (PDF)</button><button class="btn" data-ok>Aceptar</button>` });
+      pending.record=r;}await portalSubmitService('reclamos',r,pending.key);portalSubmissionStatus('Reclamo registrado. Ya puedes descargar tu constancia.');pending=null;const codigo=r.codigo,fecha=r.fecha,plazoDias=r.plazoDias;
+      f.reset(); renewCaptcha(f);
+      const m = modal({ title: `${v.tipo} ${v.tipo === 'Queja' ? 'registrada' : 'registrado'}`, body: `<div class="notice ok">Tu ${esc(v.tipo.toLowerCase())} fue registrado correctamente el ${fdate(fecha, true)}.</div><p>Tu código de seguimiento es:</p><div class="code-box">${codigo}</div><p>Código de verificación: <b class="mono">${esc(r.cargoCod || 'Pendiente de actualización')}</b></p><dl class="kv" style="margin-top:12px"><dt>Responsable</dt><dd>${esc(c.responsable)} · ${esc(c.cargo)}</dd><dt>Plazo de respuesta</dt><dd>${plazoDias} días hábiles (hasta el ${fdate(r.vence)})</dd></dl><p>Puedes descargar tu constancia. Correo de contacto: <b>${esc(r.correo)}</b>. Guarda tu código para consultar el estado.</p>`, foot: `<button class="btn sec" data-print>${S16('print')} Descargar constancia (PDF)</button><button class="btn" data-ok>Aceptar</button>` });
       $('[data-ok]', m.el).onclick = m.close; $('[data-print]', m.el).onclick = () => lrPdf(r, 'constancia');
-    } catch (err) { console.error(err); toast('No se pudo registrar. Intente nuevamente.', 'err'); }
-    finally { btn.disabled = false; }
+    } catch (err) {const message=err.message||'No se pudo confirmar el registro. Conserva los datos y reintenta el mismo envío.';toast(message,'err');portalSubmissionStatus(message);}
+    finally {window.removeEventListener('beforeunload',preventLeave);busy=false;controls.forEach(([el,disabled])=>el.disabled=disabled);progress.hidden=true;f.removeAttribute('aria-busy');btn.innerHTML=`${S16('send')} Enviar reclamo`;}
   };
   const q = $('[data-lrq2]');
   const show = r => { $('#lq2-r').innerHTML = r ? `<div class="pz-track" role="status"><div class="pz-track-h"><div><b class="mono">${esc(r.codigo)}</b> · ${esc(r.tipo)}<br><small>Registrado el ${fdate(r.fecha, true)}</small></div>${stBadge(r.anulado ? 'Anulado' : r.estado)}</div>${svTrack(['Recibido', 'Derivado', 'En atención', 'Atendido'], r.anulado ? 'Anulado' : r.estado, { Recibido: 0, Derivado: 1, 'En atención': 2, Atendido: 3, Cerrado: 3, Anulado: 0 })}<dl class="kv"><dt>Plazo</dt><dd>${lrSem(r)} · vence ${fdate(lrPlazo(r).due)}</dd>${r.area ? `<dt>Área que atiende</dt><dd>${esc(areaName(r.area))}</dd>` : ''}${r.respuesta ? `<dt>Respuesta</dt><dd style="white-space:pre-wrap">${esc(r.respuesta)}</dd>` : ''}</dl><ol class="pz-tl">${(r.historial || []).map(h => `<li><span>${fshort(h.fecha, true)}</span><b>${esc(h.estado)}</b></li>`).join('')}</ol><div style="margin-top:12px"><button type="button" class="btn sm sec" data-lrpdf>${S16('download')} Descargar constancia (PDF)</button></div></div>` : `<div class="notice warn" role="status">No se encontró un registro con ese código y documento. Verifique los datos de su constancia.</div>`; const b = $('[data-lrpdf]'); if (b && r) b.onclick = () => lrPdf(r, 'constancia'); };
@@ -565,13 +577,13 @@ async function lrPdf(r, kind) {
   y+=46;
   if(y>267){doc.addPage();y=20;}
   doc.setFont('helvetica', 'normal'); doc.setFontSize(7.8); doc.setTextColor(70);
-  doc.text(doc.splitTextToSize(`La formulación del reclamo no impide acudir a otras vías de solución de controversias ni es requisito previo para interponer una denuncia ante las autoridades competentes. El instituto dará respuesta en un plazo no mayor de ${lrPlazoDias(r)} días hábiles mediante el seguimiento del portal. El envío por correo está pendiente de habilitación. Consulte con el seguimiento y su documento o código de verificación.`, W - 2 * M), M, y + 4);
+  doc.text(doc.splitTextToSize(`La formulación del reclamo no impide acudir a otras vías de solución de controversias ni es requisito previo para interponer una denuncia ante las autoridades competentes. El instituto dará respuesta en un plazo no mayor de ${lrPlazoDias(r)} días hábiles mediante el seguimiento del portal. Los avisos por correo dependen de la configuración institucional. Consulte el seguimiento y su documento o código de verificación.`, W - 2 * M), M, y + 4);
   pdfPie(doc, `Libro de Reclamaciones Virtual · ${lrCfg().correo} · ${inst().direccion}`);
   downloadBlob(doc.output('blob'), `${kind === 'constancia' ? 'Constancia' : 'Hoja'}_${r.codigo}.pdf`);
 }
 
 /* ---------- Panel del Libro de reclamaciones ---------- */
-const lrTabs2 = a => tabsBar([['d', 'Resumen', '#/admin/reclamos'], ['l', 'Bandeja de reclamos', '#/admin/reclamos/bandeja'], ['n', 'Correo pendiente', '#/admin/reclamos/notificaciones'], ['c', 'Responsable y plazos', '#/admin/reclamos/config']], a);
+const lrTabs2 = a => tabsBar([['d', 'Resumen', '#/admin/reclamos'], ['l', 'Bandeja de reclamos', '#/admin/reclamos/bandeja'], ['n', 'Notificaciones por correo', '#/admin/reclamos/notificaciones'], ['c', 'Responsable y plazos', '#/admin/reclamos/config']], a);
 const baseReclamos = CUSTOM.reclamos, baseReclamoDet = reclamoDetalle;
 CUSTOM.reclamos = (parts) => {
   if (parts[2] === 'notificaciones') { const o = lrNotif(); o.html = o.html.replace(lrTabs('n'), lrTabs2('n')); return o; }
@@ -613,7 +625,7 @@ reclamoDetalle = function (id) {
     const d = $('[data-der]'); if (d) d.onclick = () => { const v = $('#lr-ar').value; if (!v) return toast('Seleccione el área.', 'err'); const a = areaOf(v); const ind = $('#lr-arn').value.trim(); const me = currentUser().usuario;
       r.area = v; if (r.estado === 'Recibido') r.estado = 'Derivado'; r.historial.push({ fecha: nowISO(), usuario: me, estado: r.estado, nota: `Derivado a ${areaName(v)}${ind ? ': ' + ind : ''}` });
       if (a) mailOut(a.correo, `[${r.codigo}] ${r.tipo} derivado para su atención`, `${r.nombres}: ${r.descripcion}${ind ? ' · Indicación: ' + ind : ''} · Vence: ${fshort(lrPlazo(r).due)}`);
-      audit('Derivación', 'Libro de reclamaciones', r.codigo, areaName(v)); stamp(r); if (saveDB()) { toast('Derivación registrada. El envío por correo está pendiente de configuración.', 'ok'); route(); } };
+      audit('Derivación', 'Libro de reclamaciones', r.codigo, areaName(v)); stamp(r); if (saveDB()) { toast('Derivación registrada. Avisos en cola para el solicitante y el área receptora.', 'ok'); route(); } };
   };
   return out;
 };
@@ -662,7 +674,7 @@ CUSTOM['ix-bolsa'] = (parts, q) => {
   return bolsaPanel();
 };
 function bolsaPanel() {
-  const D = XD(); const hoy = new Date().toISOString().slice(0, 10);
+  const D = XD(); const hoy = ymd(new Date());
   const est = D.estudiantes.filter(e => e.estado === 'Regular').length, egr = D.estudiantes.filter(e => ['Egresado', 'Titulado'].includes(e.estado)).length;
   const empA = D.empresas.filter(e => e.validada).length, empP = D.empresas.filter(e => empEstado(e) === 'Pendiente').length;
   const conv = D.ofertas.filter(o => o.estado === 'Publicada' && o.limite >= hoy).length;
@@ -694,11 +706,11 @@ function bolsaEmpresas() {
     if(!canWriteAcademic('bolsa'))return toast('Tu perfil dispone de consulta de empresas.', 'warn');
     const me = currentUser(); const u = coll('usuarios').find(x => x.vin === 'emp:' + e.id);
     let motivo = '';
-    if (!ok) { motivo = await promptBox(`Motivo ${empEstado(e) === 'Aprobada' ? 'de la suspensión' : 'del rechazo'} de ${e.nom} (se enviará a la empresa):`, { title: 'Rechazar empresa', ok: 'Confirmar', textarea: true }); if (motivo == null) return; if (motivo.trim().length < 5) return toast('Indique el motivo.', 'err'); }
-    e.validada = ok; e.estadoVal = ok ? 'Aprobada' : 'Rechazada'; e.motivoRech = ok ? '' : motivo.trim(); e.valPor = me.usuario; e.fechaVal = new Date().toISOString().slice(0, 10);
+    if (!ok) { motivo = await promptBox(`Motivo ${empEstado(e) === 'Aprobada' ? 'de la suspensión' : 'del rechazo'} de ${esc(e.nom)} (se enviará a la empresa):`, { title: 'Rechazar empresa', ok: 'Confirmar', textarea: true }); if (motivo == null) return; if (motivo.trim().length < 5) return toast('Indique el motivo.', 'err'); }
+    e.validada = ok; e.estadoVal = ok ? 'Aprobada' : 'Rechazada'; e.motivoRech = ok ? '' : motivo.trim(); e.valPor = me.usuario; e.fechaVal = ymd(new Date());
     if (u && u.ixId) IX.notifyTo('u:' + u.ixId, ok ? 'Tu empresa fue aprobada: ya puedes publicar convocatorias' : 'Tu solicitud de empresa no fue aprobada: ' + e.motivoRech, 'bolsa');
     mailOut(e.correo, ok ? `Cuenta de empresa aprobada - Bolsa laboral ${inst().nombre}` : `Cuenta de empresa no aprobada - Bolsa laboral ${inst().nombre}`, ok ? `La empresa ${e.nom} fue validada por la ${c.responsable}. Ingrese con su RUC y contraseña.` : `Motivo: ${e.motivoRech}`);
-    IX.logAct(ok ? 'Aprobar empresa' : 'Rechazar empresa', 'Bolsa laboral', `${e.nom} (RUC ${e.ruc})${ok ? '' : ' · ' + e.motivoRech}`); if(!IX.persist())return false; toast(ok ? `${e.nom} aprobada. El correo está pendiente de configuración.` : `${e.nom} rechazada. El correo está pendiente de configuración.`, 'ok'); route();
+    IX.logAct(ok ? 'Aprobar empresa' : 'Rechazar empresa', 'Bolsa laboral', `${e.nom} (RUC ${e.ruc})${ok ? '' : ' · ' + e.motivoRech}`); if(!IX.persist())return false; toast(ok ? `${e.nom} aprobada. Aviso registrado en la cola de correo.` : `${e.nom} rechazada. Aviso registrado en la cola de correo.`, 'ok'); route();
   };
   return { html, after: () => {
     $$('[data-ef]').forEach(b => b.onclick = () => { st.f = b.dataset.ef; route(); });
@@ -803,7 +815,7 @@ function bolsaEgresados(q) {
 
 /* ---------- Bolsa laboral pública: acceso por tipo de usuario + registro de empresas ---------- */
 R('servicios/bolsa-laboral', (path, q) => {
-  const D = IX && IX.db ? XD() : null; const hoy = new Date().toISOString().slice(0, 10);
+  const D = IX && IX.db ? XD() : null; const hoy = ymd(new Date());
   const nOf = D ? D.ofertas.filter(o => o.estado === 'Publicada' && o.limite >= hoy).length : 0, nEmp = D ? D.empresas.filter(e => e.validada).length : 0;
   const body = `<div class="pz-bl"><div class="pz-bl-l"><span class="pz-bl-ic">${ic('briefcase')}</span><h1>Bolsa <span>Laboral</span></h1><b>${esc(inst().nombre)}</b><p>Plataforma institucional para conectar estudiantes y egresados con empresas y oportunidades laborales.</p><div class="pz-bl-3"><span>${ic('grad')}Estudiantes</span><span>${ic('award')}Egresados</span><span>${ic('building')}Empresas</span></div><div class="pz-bl-n"><span><b>${nOf}</b> convocatorias vigentes</span><span><b>${nEmp}</b> empresas aliadas</span></div></div>
     <form class="pz-bl-r" data-blog novalidate><span class="pz-bl-ic sm">${ic('user')}</span><h2>Iniciar sesión</h2><small>Bolsa Laboral · ${esc(inst().nombreCorto)}</small>
@@ -1148,10 +1160,12 @@ function svNav(active) {
   return `<nav class="pz-svnav" aria-label="Servicios en línea"><a href="#/servicios" class="pz-svnav-h ${active === '' ? 'on' : ''}" title="Servicios en línea" aria-label="Servicios en línea">${sic('home', 16)}</a>${it.map(([s, l, i]) => `<a href="#/servicios/${s}" class="${s === active ? 'on' : ''}" ${s === active ? 'aria-current="page"' : ''}>${sic(i, 16)}<span>${l}</span></a>`).join('')}</nav>`;
 }
 /* cabecera del módulo */
-function svHead(k, chips) {
+function svHead(k, chips, compact) {
   const m = SV_MODS[k];
-  return `<header class="pz-mh t-${m.tone}"><span class="pz-mh-ic">${sic(m.icon, 30)}</span><div class="pz-mh-tx"><span class="pz-mh-k">Servicios en línea · ${esc(inst().nombreCorto)}</span><h1>${esc(m.title)}</h1><p>${esc(m.text)}</p>${chips && chips.length ? `<ul class="pz-mh-ch">${chips.map(([i, t]) => `<li>${sic(i, 15)}<span>${t}</span></li>`).join('')}</ul>` : ''}</div></header>`;
+  return `<header class="pz-mh t-${m.tone}${compact ? ' compact' : ''}"><span class="pz-mh-ic">${sic(m.icon, 30)}</span><div class="pz-mh-tx"><span class="pz-mh-k">Servicios en línea · ${esc(inst().nombreCorto)}</span><h1>${esc(m.title)}</h1><p>${esc(m.text)}</p>${chips && chips.length ? `<ul class="pz-mh-ch">${chips.map(([i, t]) => `<li>${sic(i, 15)}<span>${t}</span></li>`).join('')}</ul>` : ''}</div></header>`;
 }
+/* recuadro compacto de dato clave junto a la cabecera */
+const svKeyBox = (icon, kicker, big, note, label) => `<section class="pz-horario compact" aria-label="${esc(label || kicker)}"><div class="pz-h-ic">${ic(icon)}</div><div><span class="pz-k">${kicker}</span><b class="pz-hh">${big}</b>${note ? `<span class="pz-live off">${note}</span>` : ''}</div></section>`;
 /* pasos del servicio */
 const svSteps = steps => `<ol class="pz-mst">${steps.map(([t, d], i) => `<li><span>${i + 1}</span><div><b>${t}</b><small>${d}</small></div></li>`).join('')}</ol>`;
 /* pestañas del módulo (compatibles con los enlazadores existentes: data-tab / data-pane) */
@@ -1185,22 +1199,9 @@ R('servicios', path => {
    y cada título se copian al registro «Verificación de documentos» del portal, que es el que
    consulta la página pública y donde el personal puede anular un documento. */
 const PZ_SRC = { cert: 'Certificación modular', tit: 'Grados y títulos' };
-function pzSyncCerts(A) {
-  const X = A || (IX && IX.db ? XD() : null); if (!X || !X.estudiantes) return false;
-  const R0 = coll('certificados'); let ch = false; const seen = new Set();
-  const pidOf = id => { const m = Object.entries(X.progMap || {}).find(([, v]) => +v === +id); if (m) return m[0]; const pr = (X.programas || []).find(p => p.id === id); return pr && pr.pid || ''; };
-  const put = (ref, w) => { seen.add(ref); let r = R0.find(c => c.ref === ref) || (w.codigo && R0.find(c => !c.ref && c.codigo === w.codigo));
-    if (!r) { R0.unshift(stamp(Object.assign({ id: uid(), ref, estado: 'Válido' }, w), true)); ch = true; return; }
-    if (!r.ref) { r.ref = ref; ch = true; }
-    Object.keys(w).forEach(k => { if (w[k] !== undefined && r[k] !== w[k]) { r[k] = w[k]; ch = true; } }); };
-  const E = id => X.estudiantes.find(e => e.id === id);
-  (X.certs || []).forEach(c => { const e = E(c.est), m = (X.modulos || []).find(x => x.id === c.mod) || {}; if (!e || !c.num) return;
-    put('ix:cert:' + c.id, { codigo: String(c.num).toUpperCase(), dni: e.dni, nombres: e.nom, programaId: pidOf(e.prog), tipo: 'Certificado modular', detalle: [m.cod, m.nombre].filter(Boolean).join(' · '), fecha: String(c.fecha).slice(0, 10), origen: PZ_SRC.cert }); });
-  (X.titulos || []).forEach(t => { const e = E(t.est); if (!e || !t.cod) return;
-    put('ix:tit:' + t.id, { codigo: String(t.cod).toUpperCase(), dni: e.dni, nombres: e.nom, programaId: pidOf(e.prog), tipo: 'Título de Profesional Técnico', detalle: t.resol || '', fecha: String(t.tit || t.culm).slice(0, 10), origen: PZ_SRC.tit }); });
-  R0.forEach(r => { if (r.ref && /^ix:(cert|tit):/.test(r.ref) && !seen.has(r.ref) && r.estado === 'Válido') { r.estado = 'Anulado'; r.motivo = 'Retirado del registro académico'; ch = true; } });
-  return ch;
-}
+// The PHP transaction maintains the registry and preserves issued snapshots.
+// Browser-side catalog synchronization must not rewrite historical documents.
+function pzSyncCerts() { return false; }
 window.pzSyncCerts = pzSyncCerts;
 if (typeof IXHOST === 'object' && IXHOST.saveAcad) { const _sv = IXHOST.saveAcad; IXHOST.saveAcad = a => { try { pzSyncCerts(a); } catch (e) { console.error(e); } return _sv(a); }; }
 if (typeof SPECS === 'object' && SPECS.certificados) { const S0 = SPECS.certificados;
@@ -1216,15 +1217,15 @@ if (typeof SPECS === 'object' && SPECS.certificados) { const S0 = SPECS.certific
 R('servicios/consulta-certificados', (path, q) => {
   const pre = (q && q.get ? q.get('codigo') || '' : '').trim().toUpperCase(); const i = inst();
   const nCert = coll('certificados').length;
-  const body = `${svNav('consulta-certificados')}${svHead('cert', [['zap', 'Resultado inmediato'], ['shield', 'Datos personales protegidos'], ['table', 'Código QR en cada documento']])}
+  const body = `${svNav('consulta-certificados')}<div class="pz-mpv-top">${svHead('cert', null, true)}${svKeyBox('zap', 'Verificación en línea', 'Resultado inmediato', 'Código QR en cada documento · datos personales protegidos')}</div>
    <div class="pz-cq-wrap"><form class="card cb pz-cq" data-cq novalidate><h2>${sic('search', 20)} Verificar un documento</h2>
      <div class="pz-seg" role="radiogroup" aria-label="Buscar por"><label><input type="radio" name="t" value="codigo" checked><span>${sic('key', 15)} Código de verificación</span></label><label><input type="radio" name="t" value="dni"><span>${sic('user', 15)} DNI del titular</span></label></div>
      <div class="field"><label for="cq-v" data-cql>Código de verificación</label><input id="cq-v" name="v" autocomplete="off" placeholder="Ej.: CERT-2025-000123" value="${esc(pre)}"><div class="hint" data-cqh>Figura en la parte inferior del documento, junto al código QR.</div></div>
      ${captchaHTML('cap-cq')}
      <button class="btn pz-cq-b">${sic('shield', 17)} Verificar autenticidad</button></form>
-    <aside class="pz-cq-i"><h3>¿Qué puedo verificar?</h3><ul><li>${sic('award', 16)} Títulos de Profesional Técnico</li><li>${sic('file', 16)} Certificados de estudios y modulares</li><li>${sic('clipboard', 16)} Constancias emitidas por el instituto</li></ul><h3>¿Tienes el documento impreso?</h3><p>Escanea su código QR con la cámara del celular: se abrirá esta página con el resultado.</p><p class="pz-cq-n">Por seguridad, el DNI del titular se muestra parcialmente oculto (Ley N.º 29733).</p></aside></div>
+    <section class="pz-cq-i"><div><h3>¿Qué puedo verificar?</h3><ul><li>${sic('award', 16)} Títulos de Profesional Técnico</li><li>${sic('file', 16)} Certificados de estudios y modulares</li><li>${sic('clipboard', 16)} Constancias emitidas por el instituto</li></ul></div><div><h3>¿Tienes el documento impreso?</h3><p>Escanea su código QR con la cámara del celular: se abrirá esta página con el resultado.</p><p class="pz-cq-n">Por seguridad, el DNI del titular se muestra parcialmente oculto (Ley N.º 29733).</p></div><div><h3>Emisión de documentos</h3><p>Para solicitar un certificado o una constancia, presenta tu solicitud por la <a href="#/servicios/mesa-de-partes">Mesa de Partes Virtual</a>. Costos según el <a href="#/transparencia/tupa">TUPA vigente</a>.</p><h3>Secretaría Académica</h3><p>📞 ${esc(i.telefono)} · ✉️ <a href="mailto:${esc(i.correo)}">${esc(i.correo)}</a><br>🕗 ${esc(i.horario)}</p></div></section></div>
    <div id="cq-r" aria-live="polite"></div>`;
-  const side = `<section class="side-box"><h2>Emisión de documentos</h2><div class="pad" style="font-size:13.5px">Para solicitar un certificado o una constancia, presenta tu solicitud por la <a href="#/servicios/mesa-de-partes">Mesa de Partes Virtual</a>.<br><br>Costos según el <a href="#/transparencia/tupa">TUPA vigente</a>.</div></section><section class="side-box"><h2>Secretaría Académica</h2><div class="pad" style="font-size:13.5px">📞 ${esc(i.telefono)}<br>✉️ <a href="mailto:${esc(i.correo)}">${esc(i.correo)}</a><br>🕗 ${esc(i.horario)}</div></section>`;
+  const side = null;
   const html = shell(path, { title: 'Consulta de certificados', desc: `Verificación en línea de títulos, certificados y constancias del ${inst().nombre}.`, crumbs: [['Servicios', '#/servicios'], ['Consulta de certificados']], banner: { kicker: 'Servicios en línea', title: 'Consulta de certificados', text: 'Verificación de autenticidad en línea' }, side, body });
   const card = d => `<article class="pz-cert ${d.ok ? 'ok' : 'bad'}" role="status"><div class="pz-cert-s">${sic(d.ok ? 'check' : 'x', 30)}<b>${d.ok ? 'DOCUMENTO VÁLIDO' : 'DOCUMENTO ANULADO'}</b><small>${d.ok ? 'Emitido por el ' + esc(i.nombreCorto) : 'Este documento no tiene validez'}</small></div>
      <dl><dt>Tipo de documento</dt><dd>${esc(d.tipo)}</dd>${d.det ? `<dt>${/T[ií]tulo/.test(d.tipo) ? 'Resolución' : 'Detalle'}</dt><dd>${esc(d.det)}</dd>` : ''}<dt>Código</dt><dd class="mono">${esc(d.cod)}</dd>${d.titular ? `<dt>Titular</dt><dd><b>${esc(d.titular)}</b></dd>` : ''}${d.dni ? `<dt>DNI</dt><dd class="mono">${esc(maskDni(d.dni))}</dd>` : ''}${d.prog ? `<dt>Programa de estudios</dt><dd>${esc(d.prog)}</dd>` : ''}<dt>Fecha de emisión</dt><dd>${esc(d.fecha)}</dd>${d.motivo ? `<dt>Motivo de anulación</dt><dd>${esc(d.motivo)}</dd>` : ''}${d.origen ? `<dt>Registro</dt><dd>${esc(d.origen)}</dd>` : ''}<dt>Verificado el</dt><dd>${fdate(new Date().toISOString(), true)}</dd></dl></article>`;
@@ -1254,7 +1255,7 @@ R('servicios/consulta-certificados', (path, q) => {
     const f = $('[data-cq]');
     const sync = () => { const dni = f.t.value === 'dni'; $('[data-cql]', f).textContent = dni ? 'DNI del titular' : 'Código de verificación'; f.v.placeholder = dni ? 'Ej.: 72345678' : 'Ej.: CERT-2025-000123'; f.v.inputMode = dni ? 'numeric' : 'text'; $('[data-cqh]', f).textContent = dni ? 'Se listan todos los documentos emitidos a nombre del titular.' : 'Figura en la parte inferior del documento, junto al código QR.'; };
     $$('[name=t]', f).forEach(x => x.onchange = sync);
-    const lookup = (t, v) => { const result = portalLookup('certificados', v, '', t); show(t, v, result ? (Array.isArray(result) ? result : [result]) : []); };
+    const lookup = (t, v) => { const result = portalLookup('certificados', v, '', t); if (t !== 'codigo') { const box = $('#cap-cq', f); if (box) { delete box.dataset.challenge; delete box.dataset.loading; f.captcha.value = ''; loadCaptcha(box); } } show(t, v, result ? (Array.isArray(result) ? result : [result]) : []); };
     if (pre) lookup('codigo', pre);
     f.onsubmit = e => { e.preventDefault(); const v = f.v.value.trim().toUpperCase(); const er = {}; if (!v) er.v = f.t.value === 'dni' ? 'Ingrese el DNI del titular.' : 'Ingrese el código de verificación.'; else if (f.t.value === 'dni' && !/^\d{8}$/.test(v)) er.v = 'El DNI debe tener 8 dígitos.'; const cap = checkCaptcha(f, 'cap-cq'); if (cap) er.captcha = cap; if (!showErrors(f, er)) return; lookup(f.t.value, v); };
   } };
@@ -1285,7 +1286,7 @@ R('servicios/bolsa-laboral', (path, q) => {
   const emps = D.empresas.filter(e => e.validada); const vac = ofs.reduce((a, o) => a + (+o.vac || 0), 0);
   const tab0 = q && q.get && (q.get('tab') === 'empresas' || q.get('registro') === '1') ? 'e' : q && q.get && q.get('tab') === 'como' ? 'i' : 'o';
   const progs = [...new Set(ofs.map(o => o.prog).filter(Boolean))].map(id => xprog(id));
-  const body = `${svNav('bolsa-laboral')}${svHead('bolsa', [['briefcase', `<b>${ofs.length}</b> ofertas vigentes`], ['users', `<b>${vac}</b> vacantes`], ['building', `<b>${emps.length}</b> empresas aliadas`]])}
+  const body = `${svNav('bolsa-laboral')}<div class="pz-mpv-top">${svHead('bolsa', null, true)}${svKeyBox('briefcase', 'Bolsa Laboral en cifras', `${ofs.length} ofertas · ${vac} vacantes`, `${emps.length} empresa(s) aliada(s) · responsable: ${esc(cfg.responsable || 'pendiente de asignación')}`)}</div>
    ${svTabs([['o', 'briefcase', 'Ofertas laborales'], ['e', 'building', 'Para empresas'], ['i', 'book', '¿Cómo postular?']], tab0)}
    <div data-pane="o" ${tab0 === 'o' ? '' : 'hidden'}>
     <div class="pz-of-f" role="search"><div class="pz-in2">${sic('search', 17)}<input type="search" data-ofq placeholder="Buscar por puesto, empresa o palabra clave" aria-label="Buscar ofertas"></div>
@@ -1305,7 +1306,7 @@ R('servicios/bolsa-laboral', (path, q) => {
     ${svSteps([['Busca la oferta', 'Filtra por programa de estudios o modalidad.'], ['Presiona «Postular»', 'El sistema te lleva al inicio de sesión de la intranet.'], ['Inicia sesión', 'Con tu DNI y contraseña de estudiante o egresado.'], ['Confirma', 'Tu postulación se envía con tu perfil y tu CV.']])}
     <section class="card cb pz-bl-faq"><h2>Preguntas frecuentes</h2><h3>¿Quién puede postular?</h3><p>Estudiantes y egresados de ${esc(inst().nombre)} con cuenta en la intranet. Si aún no tienes cuenta, solicítala en Secretaría Académica.</p><h3>¿Dónde subo mi CV?</h3><p>En la intranet, en Bolsa laboral › Mi perfil. Es obligatorio para postular.</p><h3>¿Cómo sé si me seleccionaron?</h3><p>En la intranet verás el estado de cada postulación (Recibida, En revisión, Seleccionado) y recibirás un aviso.</p><h3>Soy empresa, ¿cuánto cuesta?</h3><p>Nada. El registro y la publicación de ofertas son gratuitos.</p></section>
    </div>`;
-  const side = `<section class="side-box"><h2>Bolsa Laboral en cifras</h2><div class="pad pz-bl-kp"><div><b>${ofs.length}</b><span>ofertas vigentes</span></div><div><b>${vac}</b><span>vacantes</span></div><div><b>${emps.length}</b><span>empresas aliadas</span></div></div></section><section class="side-box"><h2>Responsable</h2><div class="pad" style="font-size:13.5px"><b>${esc(cfg.responsable || 'Responsable pendiente de asignación')}</b><br><a href="mailto:${esc(cfg.correo)}">${esc(cfg.correo)}</a></div></section>`;
+  const side = null;
   const html = shell(path, { title: 'Bolsa Laboral', desc: `Bolsa Laboral del ${inst().nombre}: ofertas de empleo y prácticas para estudiantes y egresados, y registro libre de empresas.`, crumbs: [['Servicios', '#/servicios'], ['Bolsa Laboral']], banner: { kicker: 'Servicios en línea', title: 'Bolsa Laboral', text: 'Conectamos talento con empresas' }, side, body });
   return { html, after: () => {
     const showTab = k => { $$('.pz-mt [data-tab]').forEach(x => x.setAttribute('aria-selected', x.dataset.tab === k)); $$('[data-pane]').forEach(p => p.hidden = p.dataset.pane !== k); if (k === 'e') { const b = $('[data-tab="pubbolsa:empresa"]'); if (b && b.getAttribute('aria-selected') !== 'true') b.click(); } };
@@ -1359,13 +1360,13 @@ function pzDocNav(cur) {
   const X = IX && IX.db ? XD() : { certs: [], titulos: [] }; const reg = alive('certificados');
   const it = [['ix-certificados', 'award', 'Certificación modular', `${X.certs.length} certificaciones`, '1. Registra la certificación de cada módulo'],
     ['ix-titulos', 'grad', 'Grados y títulos', `${X.titulos.length} títulos`, '2. Registra los títulos otorgados'],
-    ['certificados', 'shield', 'Verificación de documentos', `${reg.filter(r => r.estado === 'Válido').length} válidos · ${reg.filter(r => r.estado !== 'Válido').length} anulados`, '3. Registro único: se verifica y se anula aquí']];
+    ['certificados', 'shield', 'Constancias / Certificados', `${reg.filter(r => r.estado === 'Válido').length} válidos · ${reg.filter(r => r.estado !== 'Válido').length} anulados`, '3. Registra constancias y certificados de cursos']];
   const ok = m => typeof can !== 'function' || can(m);
   return `<nav class="pz-dnav" aria-label="Certificados y títulos">${it.filter(x => ok(x[0])).map(([m, i, l, n, d]) => `<a href="#/admin/${m}" class="${m === cur ? 'on' : ''}" ${m === cur ? 'aria-current="page"' : ''}>${sic(i, 18)}<span><b>${l}</b><small>${d}</small><em>${n}</em></span></a>`).join('')}<a class="pub" href="#/servicios/consulta-certificados" target="_blank" rel="noopener">${sic('external', 16)}<span><b>Consulta pública</b><small>Así lo ve el ciudadano</small></span></a></nav>`;
 }
 if (typeof IXHOST === 'object' && IXHOST.head) { const _hd = IXHOST.head;
   IXHOST.head = (title, desc, actions, code) => { const t = String(title).replace(/<[^>]+>/g, '');
-    const k = t === 'Constancias y certificados' ? 'ix-certificados' : t === 'Grados y títulos' ? 'ix-titulos' : null;
+    const k = ['Constancias y certificados','Certificación modular'].includes(t) ? 'ix-certificados' : t === 'Grados y títulos' ? 'ix-titulos' : null;
     if (!k || !currentUser() || isCommunity()) return _hd(title, desc, actions, code);
     const tt = k === 'ix-certificados' ? 'Certificación modular' : t;
     return admHead(tt, desc || '', actions || '', k === 'ix-certificados' ? 'award' : 'grad', [['Certificados y títulos'], [tt]]) + pzDocNav(k); }; }

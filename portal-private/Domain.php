@@ -58,6 +58,9 @@ final class PortalDomain
         }
         foreach(self::changedRows($o['sesiones'],$a['sesiones'],'academico.sesiones') as $r){
             self::required($r,['per','prog','ciclo','sec','turno','ud','dia','ini','fin'],'Clase');
+            foreach(['prog','ud','doc','amb'] as $field)if(isset($r[$field])&&$r[$field]!==''&&$r[$field]!==null&&(!is_int($r[$field])||$r[$field]<1))throw new PortalError(422,'Referencia de clase no válida: '.$field.'.');
+            PortalAcademic::validateGroup($r);
+            if(!PortalAcademic::validPeriod($r['per'])||!in_array($r['dia'],PortalAcademic::DAYS,true))throw new PortalError(422,'Periodo o día de clase no válido.');
             self::foreign($a['programas'],$r['prog'],'Programa');$ud=self::foreign($a['uds'],$r['ud'],'Unidad didáctica');
             if($ud['prog']!==$r['prog']||$ud['ciclo']!==$r['ciclo'])throw new PortalError(422,'La unidad didáctica pertenece a otro programa o ciclo.');
             if(!preg_match('/^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/',$r['ini'])||!preg_match('/^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/',$r['fin'])||$r['ini']>=$r['fin'])throw new PortalError(422,'Intervalo de clase no válido.');
@@ -86,13 +89,21 @@ final class PortalDomain
         foreach(self::changedRows($o['certs'],$a['certs'],'academico.certs') as $r){
             self::required($r,['est','mod','fecha','num'],'Certificación');$s=self::foreign($a['estudiantes'],$r['est'],'Alumno');$m=self::foreign($a['modulos'],$r['mod'],'Módulo');
             if($s['prog']!==$m['prog']||$r['fecha']>date('Y-m-d'))throw new PortalError(422,'Módulo de otro programa o fecha futura.');
-            foreach($a['certs'] as $other)if($other['id']!==$r['id']&&(($other['est']===$r['est']&&$other['mod']===$r['mod'])||$other['num']===$r['num']))throw new PortalError(422,'Certificación duplicada.');
+            foreach($a['certs'] as $other)if(($r['estadoDoc']??'Válido')!=='Anulado'&&($other['estadoDoc']??'Válido')!=='Anulado'&&$other['id']!==$r['id']&&(($other['est']===$r['est']&&$other['mod']===$r['mod'])||$other['num']===$r['num']))throw new PortalError(422,'Certificación duplicada.');
         }
-        foreach(self::changedRows($o['notas'],$a['notas'],'academico.notas') as $r){self::required($r,['est','ud','periodo','nota'],'Nota');self::foreign($a['estudiantes'],$r['est'],'Alumno');if(!is_numeric($r['nota'])||$r['nota']<0||$r['nota']>20)throw new PortalError(422,'La nota debe estar entre 0 y 20.');}
+        $gradeKey=fn(array $r)=>json_encode([(int)($r['est']??0),$r['periodo']??null,is_string($r['ud']??null)?PortalRules::normal($r['ud']):null],JSON_THROW_ON_ERROR);
+        $gradeCounts=[];foreach($a['notas'] as $note){$key=$gradeKey($note);$gradeCounts[$key]=($gradeCounts[$key]??0)+1;}
+        foreach(self::changedRows($o['notas'],$a['notas'],'academico.notas') as $r){
+            self::required($r,['est','ud','periodo','nota'],'Nota');self::foreign($a['estudiantes'],$r['est'],'Alumno');
+            if(!is_string($r['periodo'])||!preg_match('/^20[0-9]{2}-(?:I|II)$/D',$r['periodo']))throw new PortalError(422,'El periodo de la nota debe tener el formato 2026-I o 2026-II.');
+            if(!is_string($r['ud'])||PortalRules::normal($r['ud'])==='')throw new PortalError(422,'Indica la unidad didáctica de la nota.');
+            if(!is_numeric($r['nota'])||$r['nota']<0||$r['nota']>20)throw new PortalError(422,'La nota debe estar entre 0 y 20.');
+            if($gradeCounts[$gradeKey($r)]>1)throw new PortalError(422,'Ya existe una nota para ese alumno, unidad didáctica y periodo.');
+        }
         foreach(self::changedRows($o['titulos'],$a['titulos'],'academico.titulos') as $r){
             self::required($r,['est','culm','tit','cod','resol'],'Título');$student=self::foreign($a['estudiantes'],$r['est'],'Alumno');
             if(!in_array($student['estado'],['Egresado','Titulado'],true)||$r['tit']<$r['culm'])throw new PortalError(422,'El título requiere un egresado y fechas válidas.');
-            foreach($a['titulos'] as $other)if($other['id']!==$r['id']&&($other['est']===$r['est']||$other['cod']===$r['cod']))throw new PortalError(422,'Título duplicado.');
+            foreach($a['titulos'] as $other)if($other['id']!==$r['id']&&(($other['cod']===$r['cod'])||(($r['estadoDoc']??'Válido')!=='Anulado'&&($other['estadoDoc']??'Válido')!=='Anulado'&&$other['est']===$r['est'])))throw new PortalError(422,'Título duplicado.');
             foreach($a['estudiantes'] as &$s)if($s['id']===$r['est'])$s['estado']='Titulado';unset($s);
         }
         foreach(self::changedRows($o['ofertas'],$a['ofertas'],'academico.ofertas') as $r){
@@ -111,16 +122,26 @@ final class PortalDomain
             foreach($a['postulaciones'] as $other)if($other['id']!==$r['id']&&$other['est']===$r['est']&&$other['of']===$r['of'])throw new PortalError(422,'Ya existe una postulación a esa oferta.');
             if(!in_array($r['estado'],['Recibida','En revisión','Seleccionado','No seleccionado'],true))throw new PortalError(422,'Estado de postulación no válido.');
         }
-        foreach(['programas'=>['estudiantes'=>'prog','uds'=>'prog','modulos'=>'prog','ambientes'=>'prog','sesiones'=>'prog','ofertas'=>'prog'],'estudiantes'=>['certs'=>'est','titulos'=>'est','notas'=>'est','perfilesLab'=>'est','postulaciones'=>'est'],'modulos'=>['certs'=>'mod'],'uds'=>['sesiones'=>'ud'],'docentes'=>['sesiones'=>'doc'],'ambientes'=>['sesiones'=>'amb'],'empresas'=>['ofertas'=>'emp'],'ofertas'=>['postulaciones'=>'of']] as $collection=>$refs){
+        foreach(['programas'=>['estudiantes'=>'prog','uds'=>'prog','modulos'=>'prog','ambientes'=>'prog','sesiones'=>'prog','ofertas'=>'prog'],'estudiantes'=>['certs'=>'est','titulos'=>'est','notas'=>'est','perfilesLab'=>'est','postulaciones'=>'est'],'modulos'=>['certs'=>'mod','uds'=>'mod'],'uds'=>['sesiones'=>'ud'],'docentes'=>['sesiones'=>'doc'],'ambientes'=>['sesiones'=>'amb'],'empresas'=>['ofertas'=>'emp'],'ofertas'=>['postulaciones'=>'of']] as $collection=>$refs){
             foreach($o[$collection] as $r)if(!PortalPolicy::find($a[$collection],'id',$r['id']))foreach($refs as $related=>$field)if(PortalPolicy::find($a[$related],$field,$r['id']))throw new PortalError(422,'No se puede eliminar '.$collection.' porque tiene registros relacionados.');
         }
         foreach(['certs'=>'cert','titulos'=>'titulo'] as $collection=>$type)foreach($o[$collection] as $record)if(!PortalPolicy::find($a[$collection],'id',$record['id']))foreach($a['docs'] as $doc)if(($doc['tipo']??'')===$type&&($doc['ref']??null)===($type==='cert'?$record['est']:$record['id'])&&($doc['valido']??true))throw new PortalError(422,'El registro tiene documentos emitidos. Anula el documento antes de retirar su origen.');
+        $codes=[];
         foreach($a['docs'] as &$doc){
-            if(PortalPolicy::find($o['docs'],'cod',$doc['cod']??''))continue;
+            if(!is_array($doc)||!is_string($doc['cod']??null)||isset($codes[$doc['cod']]))throw new PortalError(422,'Código de documento vacío o duplicado.');$codes[$doc['cod']]=true;
+            $issued=PortalPolicy::find($o['docs'],'cod',$doc['cod']);
+            if($issued){
+                if(!PortalPolicy::equal(array_diff_key($issued,['valido'=>1]),array_diff_key($doc,['valido'=>1])))throw new PortalError(422,'Los datos del documento emitido son históricos. Anúlalo y emite uno nuevo.');
+                if(isset($doc['valido'])&&!is_bool($doc['valido']))throw new PortalError(422,'Estado del documento no válido.');
+                if(($issued['valido']??true)===false&&($doc['valido']??true)!==false)throw new PortalError(422,'Un documento anulado no puede reactivarse.');
+                continue;
+            }
             if(!preg_match('/^[A-Z0-9-]{8,64}$/',(string)($doc['cod']??'')))throw new PortalError(422,'Código de documento no válido.');
             if(in_array($doc['tipo']??'',['cert','titulo'],true)){
-                if($doc['tipo']==='cert'){$student=self::foreign($a['estudiantes'],$doc['ref'],'Alumno');if(!PortalPolicy::find($a['certs'],'est',$student['id']))throw new PortalError(422,'El alumno no tiene certificaciones registradas.');}
-                else{$record=self::foreign($a['titulos'],$doc['ref'],'Documento');$student=self::foreign($a['estudiantes'],$record['est'],'Alumno');}
+                $module=$doc['tipo']==='cert'?'ix-certificados':'ix-titulos';
+                if(in_array(PortalPolicy::role($user),['estudiante','egresado'],true)&&!PortalPolicy::can($user,$module))throw new PortalError(403,'Tu perfil no tiene habilitado ese tipo de documento.');
+                if($doc['tipo']==='cert'){$student=self::foreign($a['estudiantes'],$doc['ref'],'Alumno');if(!array_filter($a['certs'],fn($c)=>$c['est']===$student['id']&&($c['estadoDoc']??'Válido')!=='Anulado'))throw new PortalError(422,'El alumno no tiene certificaciones registradas.');}
+                else{$record=self::foreign($a['titulos'],$doc['ref'],'Documento');$student=self::foreign($a['estudiantes'],$record['est'],'Alumno');if(($record['estadoDoc']??'Válido')==='Anulado')throw new PortalError(422,'El título está anulado.');}
                 if(in_array(PortalPolicy::role($user),['estudiante','egresado'],true)&&$student['id']!==PortalPolicy::binding($user,'est'))throw new PortalError(403,'Documento de otro alumno.');
                 $doc['persona']=$student['nom'];$doc['fecha']=date(DATE_ATOM);$doc['por']=$user['nombre'];$doc['valido']=true;
             }elseif(PortalPolicy::role($user)!=='admin'&&PortalPolicy::level($new,$user,'certificados')<2)throw new PortalError(403,'No puedes emitir ese documento.');
@@ -151,7 +172,7 @@ final class PortalDomain
             $adopt=$i;
         }
         $target??=$adopt;
-        if($target!==null){$data['certificados'][$target]=[...$data['certificados'][$target],...array_diff_key($canonical,['id'=>1,'estado'=>1])];return;}
+        if($target!==null){$data['certificados'][$target]+=array_diff_key($canonical,['id'=>1,'estado'=>1]);return;}
         $data['certificados'][]=['estado'=>'Válido',...$canonical];
     }
     public static function staff(array &$data,string $text,string $view): void
